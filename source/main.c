@@ -7,8 +7,9 @@
 #include <string.h>
 
 //========================[ 常數 ]========================
-#define GRID_WIDTH   40
-#define GRID_HEIGHT  20
+#define GRID_WIDTH   40          // 網格寬度
+#define GRID_HEIGHT  20          // 網格高度
+#define NUM_OBSTACLES 10        // 障礙物數量
 
 //========================[ 遊戲模式 ]========================
 typedef enum {
@@ -29,10 +30,11 @@ static GtkWidget* main_menu = NULL;         // 主菜單
 static GtkWidget* stack = NULL;             // GtkStack
 
 static GameMode current_mode = MODE_MENU;    // 當前模式
-static gboolean game_over = FALSE;           // 遊戲結束
+static gboolean game_over = FALSE;           // 遊戲結束標誌
 
 // 單人模式相關
 static GList* snake_single = NULL;            // 蛇的節點
+static GList* obstacles = NULL;               // 障礙物節點
 static Point   food_single;                   // 食物位置
 static int     direction_single = GDK_KEY_Right;       // 當前方向
 static int     next_direction_single = GDK_KEY_Right;  // 下一方向
@@ -54,6 +56,7 @@ static gboolean on_key_press(GtkEventControllerKey* controller,
 static void init_single_game(void);
 static gboolean update_game_single(gpointer data);
 static void generate_food_single(void);
+static void generate_obstacles_single(void);
 static gboolean check_collision_single(Point* head);
 static void show_game_over_screen_single(void);
 
@@ -62,6 +65,7 @@ static void draw_single_mode(cairo_t* cr, int width, int height, double cell_siz
 static void draw_snake_segment(cairo_t* cr, double x, double y, double size,
     GdkRGBA body, GdkRGBA shadow);
 static void draw_food(cairo_t* cr, double x, double y, double size);
+static void draw_obstacles(cairo_t* cr, double cell_size);
 
 //========================[ 函式實作 ]========================
 
@@ -87,6 +91,9 @@ static void draw_single_mode(cairo_t* cr, int width, int height, double cell_siz
 
     // 食物
     draw_food(cr, food_single.x * cell_size, food_single.y * cell_size, cell_size);
+
+    // 障礙物
+    draw_obstacles(cr, cell_size);
 
     // 蛇
     GdkRGBA body_green = { 0.0, 1.0, 0.0, 1.0 };
@@ -138,6 +145,20 @@ static void draw_food(cairo_t* cr, double x, double y, double size)
     cairo_set_source_rgb(cr, 1.0, 0.0, 0.0);
     cairo_rectangle(cr, x, y, size, size);
     cairo_fill(cr);
+}
+
+// 繪製障礙物
+static void draw_obstacles(cairo_t* cr, double cell_size)
+{
+    GdkRGBA obstacle_color = { 0.5, 0.5, 0.5, 1.0 }; // 灰色
+    for (GList* iter = obstacles; iter; iter = iter->next) {
+        Point* obs = (Point*)iter->data;
+        if (obs) {
+            cairo_set_source_rgba(cr, obstacle_color.red, obstacle_color.green, obstacle_color.blue, obstacle_color.alpha);
+            cairo_rectangle(cr, obs->x * cell_size, obs->y * cell_size, cell_size, cell_size);
+            cairo_fill(cr);
+        }
+    }
 }
 
 // 鍵盤事件處理
@@ -233,6 +254,15 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
         snake_single = NULL;
     }
 
+    // 清理障礙物
+    if (obstacles) {
+        for (GList* iter = obstacles; iter; iter = iter->next) {
+            free(iter->data);
+        }
+        g_list_free(obstacles);
+        obstacles = NULL;
+    }
+
     // 重置變數
     score_single = 0;
     direction_single = GDK_KEY_Right;
@@ -269,6 +299,15 @@ static void init_single_game(void)
         snake_single = NULL;
     }
 
+    // 清理障礙物
+    if (obstacles) {
+        for (GList* iter = obstacles; iter; iter = iter->next) {
+            free(iter->data);
+        }
+        g_list_free(obstacles);
+        obstacles = NULL;
+    }
+
     // 初始蛇
     Point* h = (Point*)malloc(sizeof(Point));
     h->x = GRID_WIDTH / 2;
@@ -281,8 +320,9 @@ static void init_single_game(void)
     score_single = 0;
     game_over = FALSE;
 
-    // 生成食物
+    // 生成食物和障礙物
     generate_food_single();
+    generate_obstacles_single();
 
     // 設置定時器
     single_timer_id = g_timeout_add(100, update_game_single, NULL);
@@ -297,6 +337,7 @@ static void generate_food_single(void)
         food_single.y = rand() % GRID_HEIGHT;
         valid = TRUE;
 
+        // 檢查是否與蛇重疊
         for (GList* iter = snake_single; iter; iter = iter->next) {
             Point* seg = (Point*)iter->data;
             if (seg->x == food_single.x && seg->y == food_single.y) {
@@ -307,13 +348,60 @@ static void generate_food_single(void)
     }
 }
 
+// 生成障礙物
+static void generate_obstacles_single(void)
+{
+    for (int i = 0; i < NUM_OBSTACLES; i++) {
+        Point* obs = (Point*)malloc(sizeof(Point));
+        gboolean valid = FALSE;
+        while (!valid) {
+            obs->x = rand() % GRID_WIDTH;
+            obs->y = rand() % GRID_HEIGHT;
+            valid = TRUE;
+
+            // 檢查是否與蛇或食物重疊
+            for (GList* iter = snake_single; iter; iter = iter->next) {
+                Point* seg = (Point*)iter->data;
+                if (seg->x == obs->x && seg->y == obs->y) {
+                    valid = FALSE;
+                    break;
+                }
+            }
+
+            if (food_single.x == obs->x && food_single.y == obs->y) {
+                valid = FALSE;
+            }
+
+            // 檢查是否與其他障礙物重疊
+            if (valid) {
+                for (GList* iter = obstacles; iter; iter = iter->next) {
+                    Point* existing_obs = (Point*)iter->data;
+                    if (existing_obs->x == obs->x && existing_obs->y == obs->y) {
+                        valid = FALSE;
+                        break;
+                    }
+                }
+            }
+        }
+        obstacles = g_list_append(obstacles, obs);
+    }
+}
+
 // 碰撞檢查
 static gboolean check_collision_single(Point* head)
 {
+    // 自撞
     for (GList* iter = snake_single->next; iter; iter = iter->next) {
         Point* seg = (Point*)iter->data;
         if (seg->x == head->x && seg->y == head->y) return TRUE;
     }
+
+    // 障礙物撞擊
+    for (GList* iter = obstacles; iter; iter = iter->next) {
+        Point* obs = (Point*)iter->data;
+        if (obs->x == head->x && obs->y == head->y) return TRUE;
+    }
+
     return FALSE;
 }
 
@@ -396,7 +484,7 @@ static void show_game_over_screen_single(void)
     // 返回按鈕
     GtkWidget* back_btn = gtk_button_new_with_label("Back to Menu");
     gtk_box_append(GTK_BOX(game_over_vbox), back_btn);
-    g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_to_menu_clicked), stack);
+    g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_to_menu_clicked), stack_ptr);
 
     // 加入GtkStack
     gtk_stack_add_named(stack_ptr, game_over_vbox, "game_over_single");
