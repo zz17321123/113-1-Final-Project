@@ -7,21 +7,29 @@
 #include <string.h>
 
 //========================[ 常數 ]========================
-#define GRID_WIDTH   40          // 網格寬度
-#define GRID_HEIGHT  20          // 網格高度
-#define NUM_OBSTACLES 10        // 障礙物數量
+#define GRID_WIDTH    40          // 網格寬度
+#define GRID_HEIGHT   20          // 網格高度
+#define NUM_OBSTACLES 10          // 障礙物數量
+#define MIN_OBS_SIZE  1           // 障礙物最小寬度/高度
+#define MAX_OBS_SIZE  3           // 障礙物最大寬度/高度
 
 //========================[ 遊戲模式 ]========================
 typedef enum {
     MODE_NONE = 0,
     MODE_MENU,
+    MODE_COUNTDOWN,
     MODE_SINGLE,
     MODE_INTRO
 } GameMode;
 
 //========================[ 結構定義 ]========================
 typedef struct {
-    int x, y;
+    int x, y;           // 起始位置（格子座標）
+    int width, height;  // 寬度和高度（格子數）
+} Obstacle;
+
+typedef struct {
+    int x, y;           // 蛇的節點位置
 } Point;
 
 //========================[ 全域變數 ]========================
@@ -40,9 +48,11 @@ static int     direction_single = GDK_KEY_Right;       // 當前方向
 static int     next_direction_single = GDK_KEY_Right;  // 下一方向
 static int     score_single = 0;              // 分數
 static GtkWidget* canvas_single = NULL;       // 繪圖區
-static guint  single_timer_id = 0;            // 定時器ID
+static guint  single_timer_id = 0;            // 遊戲定時器ID
+static guint  countdown_timer_id = 0;         // 倒數定時器ID
+static int    current_countdown = 3;          // 當前倒數數字
 
-static double CELL_SIZE = 45.0;                // 單位格子大小
+static double CELL_SIZE = 45.0;                // 單位格子大小（像素）
 
 //========================[ 函式宣告 ]========================
 static void on_single_mode_clicked(GtkButton* button, gpointer user_data);
@@ -55,6 +65,7 @@ static gboolean on_key_press(GtkEventControllerKey* controller,
 
 static void init_single_game(void);
 static gboolean update_game_single(gpointer data);
+static gboolean update_countdown(gpointer data);
 static void generate_food_single(void);
 static void generate_obstacles_single(void);
 static gboolean check_collision_single(Point* head);
@@ -62,6 +73,7 @@ static void show_game_over_screen_single(void);
 
 static void draw_game(GtkDrawingArea* area, cairo_t* cr, int width, int height, gpointer user_data);
 static void draw_single_mode(cairo_t* cr, int width, int height, double cell_size);
+static void draw_countdown(cairo_t* cr, int width, int height, int countdown);
 static void draw_snake_segment(cairo_t* cr, double x, double y, double size,
     GdkRGBA body, GdkRGBA shadow);
 static void draw_food(cairo_t* cr, double x, double y, double size);
@@ -79,6 +91,9 @@ static void draw_game(GtkDrawingArea* area, cairo_t* cr, int width, int height, 
 
     if (current_mode == MODE_SINGLE) {
         draw_single_mode(cr, width, height, CELL_SIZE);
+    }
+    else if (current_mode == MODE_COUNTDOWN) {
+        draw_countdown(cr, width, height, current_countdown);
     }
 }
 
@@ -117,6 +132,36 @@ static void draw_single_mode(cairo_t* cr, int width, int height, double cell_siz
     cairo_show_text(cr, buf);
 }
 
+// 繪製倒數計時
+static void draw_countdown(cairo_t* cr, int width, int height, int countdown)
+{
+    // 背景
+    cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+    cairo_paint(cr);
+
+    // 顯示倒數數字或 "GO!"
+    cairo_set_source_rgb(cr, 1, 1, 1);
+    cairo_select_font_face(cr, "Microsoft JhengHei",
+        CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, 100);
+
+    char buf[16];
+    if (countdown > 0) {
+        snprintf(buf, sizeof(buf), "%d", countdown);
+    }
+    else {
+        snprintf(buf, sizeof(buf), "GO!");
+    }
+
+    cairo_text_extents_t extents;
+    cairo_text_extents(cr, buf, &extents);
+    double x = (width - extents.width) / 2 - extents.x_bearing;
+    double y = (height - extents.height) / 2 - extents.y_bearing;
+
+    cairo_move_to(cr, x, y);
+    cairo_show_text(cr, buf);
+}
+
 // 繪製蛇節點
 static void draw_snake_segment(cairo_t* cr, double x, double y, double size,
     GdkRGBA body, GdkRGBA shadow)
@@ -152,10 +197,10 @@ static void draw_obstacles(cairo_t* cr, double cell_size)
 {
     GdkRGBA obstacle_color = { 0.5, 0.5, 0.5, 1.0 }; // 灰色
     for (GList* iter = obstacles; iter; iter = iter->next) {
-        Point* obs = (Point*)iter->data;
+        Obstacle* obs = (Obstacle*)iter->data;
         if (obs) {
             cairo_set_source_rgba(cr, obstacle_color.red, obstacle_color.green, obstacle_color.blue, obstacle_color.alpha);
-            cairo_rectangle(cr, obs->x * cell_size, obs->y * cell_size, cell_size, cell_size);
+            cairo_rectangle(cr, obs->x * cell_size, obs->y * cell_size, obs->width * cell_size, obs->height * cell_size);
             cairo_fill(cr);
         }
     }
@@ -194,9 +239,10 @@ static gboolean on_key_press(GtkEventControllerKey* controller,
 static void on_single_mode_clicked(GtkButton* button, gpointer user_data)
 {
     GtkStack* stack_ptr = GTK_STACK(user_data);
-    current_mode = MODE_SINGLE;
+    current_mode = MODE_COUNTDOWN;
+    current_countdown = 3;
 
-    // 初始化遊戲
+    // 初始化遊戲（蛇、食物、障礙物）
     init_single_game();
 
     // 移除舊視圖
@@ -223,6 +269,9 @@ static void on_single_mode_clicked(GtkButton* button, gpointer user_data)
     gtk_stack_add_named(stack_ptr, container, "game_single");
     canvas_single = new_canvas;
     gtk_stack_set_visible_child_name(stack_ptr, "game_single");
+
+    // 啟動倒數計時器
+    countdown_timer_id = g_timeout_add_seconds(1, update_countdown, NULL);
 }
 
 // 遊戲介紹按鈕回調
@@ -245,7 +294,7 @@ static void on_quit_clicked(GtkButton* button, gpointer user_data)
 // 返回主選單按鈕回調
 static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
 {
-    // 清理遊戲
+    // 清理蛇
     if (snake_single) {
         for (GList* iter = snake_single; iter; iter = iter->next) {
             free(iter->data);
@@ -268,11 +317,17 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
     direction_single = GDK_KEY_Right;
     next_direction_single = GDK_KEY_Right;
     game_over = FALSE;
+    current_countdown = 3;
 
     // 移除定時器
     if (single_timer_id) {
         g_source_remove(single_timer_id);
         single_timer_id = 0;
+    }
+
+    if (countdown_timer_id) {
+        g_source_remove(countdown_timer_id);
+        countdown_timer_id = 0;
     }
 
     // 移除視圖
@@ -323,9 +378,6 @@ static void init_single_game(void)
     // 生成食物和障礙物
     generate_food_single();
     generate_obstacles_single();
-
-    // 設置定時器
-    single_timer_id = g_timeout_add(100, update_game_single, NULL);
 }
 
 // 生成食物
@@ -345,6 +397,18 @@ static void generate_food_single(void)
                 break;
             }
         }
+
+        // 檢查是否與障礙物重疊
+        if (valid) {
+            for (GList* iter = obstacles; iter; iter = iter->next) {
+                Obstacle* obs = (Obstacle*)iter->data;
+                if (food_single.x >= obs->x && food_single.x < (obs->x + obs->width) &&
+                    food_single.y >= obs->y && food_single.y < (obs->y + obs->height)) {
+                    valid = FALSE;
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -352,31 +416,42 @@ static void generate_food_single(void)
 static void generate_obstacles_single(void)
 {
     for (int i = 0; i < NUM_OBSTACLES; i++) {
-        Point* obs = (Point*)malloc(sizeof(Point));
+        Obstacle* obs = (Obstacle*)malloc(sizeof(Obstacle));
         gboolean valid = FALSE;
         while (!valid) {
-            obs->x = rand() % GRID_WIDTH;
-            obs->y = rand() % GRID_HEIGHT;
+            obs->width = MIN_OBS_SIZE + rand() % (MAX_OBS_SIZE - MIN_OBS_SIZE + 1);
+            obs->height = MIN_OBS_SIZE + rand() % (MAX_OBS_SIZE - MIN_OBS_SIZE + 1);
+            obs->x = rand() % (GRID_WIDTH - obs->width);
+            obs->y = rand() % (GRID_HEIGHT - obs->height);
             valid = TRUE;
 
-            // 檢查是否與蛇或食物重疊
+            // 檢查是否與蛇重疊
             for (GList* iter = snake_single; iter; iter = iter->next) {
                 Point* seg = (Point*)iter->data;
-                if (seg->x == obs->x && seg->y == obs->y) {
+                if (seg->x >= obs->x && seg->x < (obs->x + obs->width) &&
+                    seg->y >= obs->y && seg->y < (obs->y + obs->height)) {
                     valid = FALSE;
                     break;
                 }
             }
 
-            if (food_single.x == obs->x && food_single.y == obs->y) {
-                valid = FALSE;
+            // 檢查是否與食物重疊
+            if (valid) {
+                if (food_single.x >= obs->x && food_single.x < (obs->x + obs->width) &&
+                    food_single.y >= obs->y && food_single.y < (obs->y + obs->height)) {
+                    valid = FALSE;
+                }
             }
 
             // 檢查是否與其他障礙物重疊
             if (valid) {
                 for (GList* iter = obstacles; iter; iter = iter->next) {
-                    Point* existing_obs = (Point*)iter->data;
-                    if (existing_obs->x == obs->x && existing_obs->y == obs->y) {
+                    Obstacle* existing_obs = (Obstacle*)iter->data;
+                    // 簡單的矩形重疊檢查
+                    if (!(obs->x + obs->width <= existing_obs->x ||
+                        existing_obs->x + existing_obs->width <= obs->x ||
+                        obs->y + obs->height <= existing_obs->y ||
+                        existing_obs->y + existing_obs->height <= obs->y)) {
                         valid = FALSE;
                         break;
                     }
@@ -398,8 +473,9 @@ static gboolean check_collision_single(Point* head)
 
     // 障礙物撞擊
     for (GList* iter = obstacles; iter; iter = iter->next) {
-        Point* obs = (Point*)iter->data;
-        if (obs->x == head->x && obs->y == head->y) return TRUE;
+        Obstacle* obs = (Obstacle*)iter->data;
+        if (head->x >= obs->x && head->x < (obs->x + obs->width) &&
+            head->y >= obs->y && head->y < (obs->y + obs->height)) return TRUE;
     }
 
     return FALSE;
@@ -459,6 +535,27 @@ static gboolean update_game_single(gpointer data)
     // 重繪
     gtk_widget_queue_draw(canvas_single);
     return G_SOURCE_CONTINUE;
+}
+
+// 更新倒數計時
+static gboolean update_countdown(gpointer data)
+{
+    if (current_mode != MODE_COUNTDOWN)
+        return G_SOURCE_REMOVE;
+
+    if (current_countdown > 0) {
+        current_countdown--;
+        gtk_widget_queue_draw(canvas_single);
+        return G_SOURCE_CONTINUE;
+    }
+    else {
+        // 倒數結束，開始遊戲
+        current_mode = MODE_SINGLE;
+        countdown_timer_id = 0;
+        single_timer_id = g_timeout_add(100, update_game_single, NULL);
+        gtk_widget_queue_draw(canvas_single);
+        return G_SOURCE_REMOVE;
+    }
 }
 
 // 顯示遊戲結束畫面
