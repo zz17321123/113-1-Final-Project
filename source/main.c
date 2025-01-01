@@ -12,6 +12,9 @@
 #define NUM_OBSTACLES 10          // 障礙物數量
 #define MIN_OBS_SIZE  1           // 障礙物最小寬度/高度
 #define MAX_OBS_SIZE  3           // 障礙物最大寬度/高度
+#define INITIAL_MOVE_INTERVAL 100   // 初始移動間隔（毫秒）
+#define MOVE_INTERVAL_INCREMENT 50  // 每次吃食物後移動間隔增加量（毫秒）
+#define MAX_MOVE_INTERVAL 1000      // 最大移動間隔，防止速度過慢
 
 //========================[ 遊戲模式 ]========================
 typedef enum {
@@ -59,9 +62,16 @@ static int     direction_two = GDK_KEY_Left;       // 雙人當前方向
 static int     next_direction_two = GDK_KEY_Left;  // 雙人下一方向
 static int     score_two = 0;                  // 雙人分數
 static GtkWidget* canvas_two = NULL;           // 雙人繪圖區
-static guint  two_player_timer_id = 0;         // 雙人遊戲定時器ID
+static guint  two_player_timer_id = 0;         // 雙人遊戲玩家一定時器ID
+static guint  two_player_timer2_id = 0;        // 雙人遊戲玩家二定時器ID
 static guint  countdown_two_player_timer_id = 0; // 雙人倒數定時器ID
 static int    current_countdown_two = 3;        // 雙人當前倒數數字
+
+// 新增雙人模式的速度控制變數
+static guint player1_move_interval = INITIAL_MOVE_INTERVAL; // 玩家一的移動間隔（毫秒）
+static guint player2_move_interval = INITIAL_MOVE_INTERVAL; // 玩家二的移動間隔（毫秒）
+static gboolean player1_timer_active = FALSE;
+static gboolean player2_timer_active = FALSE;
 // *** 雙人模式 ***
 
 static GList* obstacles = NULL;               // 障礙物節點
@@ -81,7 +91,8 @@ static gboolean on_key_press(GtkEventControllerKey* controller,
 static void init_single_game(void);
 static void init_two_player_game(void); // *** 雙人模式 ***
 static gboolean update_game_single(gpointer data);
-static gboolean update_game_two_player(gpointer data); // *** 雙人模式 ***
+static gboolean player1_move_cb(gpointer data); // *** 雙人模式 ***
+static gboolean player2_move_cb(gpointer data); // *** 雙人模式 ***
 static gboolean update_countdown_single(gpointer data);
 static gboolean update_countdown_two_player(gpointer data); // *** 雙人模式 ***
 static void generate_food_single(void);
@@ -422,6 +433,12 @@ static void on_two_player_mode_clicked(GtkButton* button, gpointer user_data)
     canvas_two = new_canvas;
     gtk_stack_set_visible_child_name(stack_ptr, "game_two_player");
 
+    // 初始化速度控制變數
+    player1_move_interval = INITIAL_MOVE_INTERVAL;
+    player2_move_interval = INITIAL_MOVE_INTERVAL;
+    player1_timer_active = FALSE;
+    player2_timer_active = FALSE;
+
     // 啟動倒數計時器
     countdown_two_player_timer_id = g_timeout_add_seconds(1, update_countdown_two_player, NULL);
 }
@@ -486,6 +503,12 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
     current_countdown = 3;
     current_countdown_two = 3; // *** 雙人模式 ***
 
+    // 重置速度控制變數
+    player1_move_interval = INITIAL_MOVE_INTERVAL; // *** 雙人模式 ***
+    player2_move_interval = INITIAL_MOVE_INTERVAL; // *** 雙人模式 ***
+    player1_timer_active = FALSE; // *** 雙人模式 ***
+    player2_timer_active = FALSE; // *** 雙人模式 ***
+
     // 移除定時器
     if (single_timer_id) {
         g_source_remove(single_timer_id);
@@ -495,6 +518,11 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
     if (two_player_timer_id) { // *** 雙人模式 ***
         g_source_remove(two_player_timer_id);
         two_player_timer_id = 0;
+    }
+
+    if (two_player_timer2_id) { // *** 雙人模式 ***
+        g_source_remove(two_player_timer2_id);
+        two_player_timer2_id = 0;
     }
 
     if (countdown_timer_id) {
@@ -596,6 +624,12 @@ static void init_two_player_game(void)
     score_single = 0;
     score_two = 0;
     game_over = FALSE;
+
+    // 重置速度控制變數
+    player1_move_interval = INITIAL_MOVE_INTERVAL;
+    player2_move_interval = INITIAL_MOVE_INTERVAL;
+    player1_timer_active = FALSE;
+    player2_timer_active = FALSE;
 
     // 生成食物和障礙物
     generate_food_single();
@@ -787,46 +821,86 @@ static gboolean check_collision_single(Point* head)
 // 碰撞檢查 (雙人模式)
 static gboolean check_collision_two_player(Point* head1, Point* head2)
 {
-    // 玩家一 自撞
-    for (GList* iter = snake_single->next; iter; iter = iter->next) {
-        Point* seg = (Point*)iter->data;
-        if (seg->x == head1->x && seg->y == head1->y) return TRUE;
+    gboolean collision = FALSE;
+
+    if (head1 != NULL) {
+        // 檢查玩家一的碰撞
+
+        // 自撞
+        for (GList* iter = snake_single->next; iter; iter = iter->next) {
+            Point* seg = (Point*)iter->data;
+            if (seg->x == head1->x && seg->y == head1->y) {
+                collision = TRUE;
+                break;
+            }
+        }
+
+        // 障礙物撞擊
+        if (!collision) {
+            for (GList* iter = obstacles; iter; iter = iter->next) {
+                Obstacle* obs = (Obstacle*)iter->data;
+                if (head1->x >= obs->x && head1->x < (obs->x + obs->width) &&
+                    head1->y >= obs->y && head1->y < (obs->y + obs->height)) {
+                    collision = TRUE;
+                    break;
+                }
+            }
+        }
+
+        // 撞到對方蛇的身體
+        if (!collision) {
+            for (GList* iter = snake_two; iter; iter = iter->next) {
+                Point* seg = (Point*)iter->data;
+                if (seg->x == head1->x && seg->y == head1->y) {
+                    collision = TRUE;
+                    break;
+                }
+            }
+        }
     }
 
-    // 玩家二 自撞
-    for (GList* iter = snake_two->next; iter; iter = iter->next) {
-        Point* seg = (Point*)iter->data;
-        if (seg->x == head2->x && seg->y == head2->y) return TRUE;
+    if (head2 != NULL) {
+        // 檢查玩家二的碰撞
+
+        // 自撞
+        for (GList* iter = snake_two->next; iter; iter = iter->next) {
+            Point* seg = (Point*)iter->data;
+            if (seg->x == head2->x && seg->y == head2->y) {
+                collision = TRUE;
+                break;
+            }
+        }
+
+        // 障礙物撞擊
+        if (!collision) {
+            for (GList* iter = obstacles; iter; iter = iter->next) {
+                Obstacle* obs = (Obstacle*)iter->data;
+                if (head2->x >= obs->x && head2->x < (obs->x + obs->width) &&
+                    head2->y >= obs->y && head2->y < (obs->y + obs->height)) {
+                    collision = TRUE;
+                    break;
+                }
+            }
+        }
+
+        // 撞到對方蛇的身體
+        if (!collision) {
+            for (GList* iter = snake_single; iter; iter = iter->next) {
+                Point* seg = (Point*)iter->data;
+                if (seg->x == head2->x && seg->y == head2->y) {
+                    collision = TRUE;
+                    break;
+                }
+            }
+        }
     }
 
-    // 障礙物撞擊 玩家一
-    for (GList* iter = obstacles; iter; iter = iter->next) {
-        Obstacle* obs = (Obstacle*)iter->data;
-        if (head1->x >= obs->x && head1->x < (obs->x + obs->width) &&
-            head1->y >= obs->y && head1->y < (obs->y + obs->height)) return TRUE;
+    // 確認兩個蛇頭是否相同
+    if (head1 != NULL && head2 != NULL && head1->x == head2->x && head1->y == head2->y) {
+        collision = TRUE;
     }
 
-    // 障礙物撞擊 玩家二
-    for (GList* iter = obstacles; iter; iter = iter->next) {
-        Obstacle* obs = (Obstacle*)iter->data;
-        if (head2->x >= obs->x && head2->x < (obs->x + obs->width) &&
-            head2->y >= obs->y && head2->y < (obs->y + obs->height)) return TRUE;
-    }
-
-    // 兩條蛇相撞
-    // 玩家一 撞到 玩家二 蛇身
-    for (GList* iter = snake_two; iter; iter = iter->next) {
-        Point* seg = (Point*)iter->data;
-        if (seg->x == head1->x && seg->y == head1->y) return TRUE;
-    }
-
-    // 玩家二 撞到 玩家一 蛇身
-    for (GList* iter = snake_single; iter; iter = iter->next) {
-        Point* seg = (Point*)iter->data;
-        if (seg->x == head2->x && seg->y == head2->y) return TRUE;
-    }
-
-    return FALSE;
+    return collision;
 }
 // *** 雙人模式 ***
 
@@ -887,15 +961,14 @@ static gboolean update_game_single(gpointer data)
 }
 
 // *** 雙人模式 ***
-// 更新遊戲狀態 (雙人模式)
-static gboolean update_game_two_player(gpointer data)
+// 玩家一移動回調函式
+static gboolean player1_move_cb(gpointer data)
 {
     if (current_mode != MODE_TWO_PLAYER || game_over)
         return G_SOURCE_REMOVE;
 
     // 更新方向
     direction_single = next_direction_single;
-    direction_two = next_direction_two;
 
     // 新頭位置 玩家一
     Point* head1 = (Point*)snake_single->data;
@@ -908,31 +981,14 @@ static gboolean update_game_two_player(gpointer data)
     case GDK_KEY_Right: nh1.x++; break;
     }
 
-    // 新頭位置 玩家二
-    Point* head2 = (Point*)snake_two->data;
-    if (!head2) return G_SOURCE_REMOVE;
-    Point nh2 = { head2->x, head2->y };
-    switch (direction_two) {
-    case GDK_KEY_Up:    nh2.y--; break;
-    case GDK_KEY_Down:  nh2.y++; break;
-    case GDK_KEY_Left:  nh2.x--; break;
-    case GDK_KEY_Right: nh2.x++; break;
-    }
-
     // 邊界循環 玩家一
     if (nh1.x < 0) nh1.x = GRID_WIDTH - 1;
     else if (nh1.x >= GRID_WIDTH) nh1.x = 0;
     if (nh1.y < 0) nh1.y = GRID_HEIGHT - 1;
     else if (nh1.y >= GRID_HEIGHT) nh1.y = 0;
 
-    // 邊界循環 玩家二
-    if (nh2.x < 0) nh2.x = GRID_WIDTH - 1;
-    else if (nh2.x >= GRID_WIDTH) nh2.x = 0;
-    if (nh2.y < 0) nh2.y = GRID_HEIGHT - 1;
-    else if (nh2.y >= GRID_HEIGHT) nh2.y = 0;
-
     // 碰撞
-    if (check_collision_two_player(&nh1, &nh2)) {
+    if (check_collision_two_player(&nh1, NULL)) {
         game_over = TRUE;
         gtk_widget_queue_draw(canvas_two);
         show_game_over_screen_two_player();
@@ -944,15 +1000,24 @@ static gboolean update_game_two_player(gpointer data)
     *new_seg1 = nh1;
     snake_single = g_list_prepend(snake_single, new_seg1);
 
-    // 添加新頭 玩家二
-    Point* new_seg2 = (Point*)malloc(sizeof(Point));
-    *new_seg2 = nh2;
-    snake_two = g_list_prepend(snake_two, new_seg2);
-
     // 玩家一 吃食物
     if (nh1.x == food_single.x && nh1.y == food_single.y) {
         score_single++;
         generate_food_single();
+
+        // 增加玩家一的移動間隔，使速度變慢
+        if (player1_move_interval + MOVE_INTERVAL_INCREMENT <= MAX_MOVE_INTERVAL) {
+            // 移除現有的 Timer
+            if (two_player_timer_id) {
+                g_source_remove(two_player_timer_id);
+                two_player_timer_id = 0;
+            }
+
+            player1_move_interval += MOVE_INTERVAL_INCREMENT;
+
+            // 設置新的 Timer
+            two_player_timer_id = g_timeout_add(player1_move_interval, player1_move_cb, NULL);
+        }
     }
     else {
         // 移除尾巴 玩家一
@@ -961,10 +1026,68 @@ static gboolean update_game_two_player(gpointer data)
         free(tail1);
     }
 
+    // 重繪
+    gtk_widget_queue_draw(canvas_two);
+    return G_SOURCE_CONTINUE;
+}
+
+// 玩家二移動回調函式
+static gboolean player2_move_cb(gpointer data)
+{
+    if (current_mode != MODE_TWO_PLAYER || game_over)
+        return G_SOURCE_REMOVE;
+
+    // 更新方向
+    direction_two = next_direction_two;
+
+    // 新頭位置 玩家二
+    Point* head2 = (Point*)snake_two->data;
+    if (!head2) return G_SOURCE_REMOVE;
+    Point nh2 = { head2->x, head2->y };
+    switch (direction_two) {
+    case GDK_KEY_Up:    nh2.y--; break;
+    case GDK_KEY_Down:  nh2.y++; break;
+    case GDK_KEY_Left:  nh2.x--; break;
+    case GDK_KEY_Right: nh2.x++; break;
+    }
+
+    // 邊界循環 玩家二
+    if (nh2.x < 0) nh2.x = GRID_WIDTH - 1;
+    else if (nh2.x >= GRID_WIDTH) nh2.x = 0;
+    if (nh2.y < 0) nh2.y = GRID_HEIGHT - 1;
+    else if (nh2.y >= GRID_HEIGHT) nh2.y = 0;
+
+    // 碰撞
+    if (check_collision_two_player(NULL, &nh2)) {
+        game_over = TRUE;
+        gtk_widget_queue_draw(canvas_two);
+        show_game_over_screen_two_player();
+        return G_SOURCE_REMOVE;
+    }
+
+    // 添加新頭 玩家二
+    Point* new_seg2 = (Point*)malloc(sizeof(Point));
+    *new_seg2 = nh2;
+    snake_two = g_list_prepend(snake_two, new_seg2);
+
     // 玩家二 吃食物
     if (nh2.x == food_single.x && nh2.y == food_single.y) {
         score_two++;
         generate_food_single();
+
+        // 增加玩家二的移動間隔，使速度變慢
+        if (player2_move_interval + MOVE_INTERVAL_INCREMENT <= MAX_MOVE_INTERVAL) {
+            // 移除現有的 Timer
+            if (two_player_timer2_id) {
+                g_source_remove(two_player_timer2_id);
+                two_player_timer2_id = 0;
+            }
+
+            player2_move_interval += MOVE_INTERVAL_INCREMENT;
+
+            // 設置新的 Timer
+            two_player_timer2_id = g_timeout_add(player2_move_interval, player2_move_cb, NULL);
+        }
     }
     else {
         // 移除尾巴 玩家二
@@ -994,7 +1117,7 @@ static gboolean update_countdown_single(gpointer data)
         // 倒數結束，開始遊戲
         current_mode = MODE_SINGLE;
         countdown_timer_id = 0;
-        single_timer_id = g_timeout_add(100, update_game_single, NULL);
+        single_timer_id = g_timeout_add(INITIAL_MOVE_INTERVAL, update_game_single, NULL);
         gtk_widget_queue_draw(canvas_single);
         return G_SOURCE_REMOVE;
     }
@@ -1016,7 +1139,15 @@ static gboolean update_countdown_two_player(gpointer data)
         // 倒數結束，開始遊戲
         current_mode = MODE_TWO_PLAYER;
         countdown_two_player_timer_id = 0;
-        two_player_timer_id = g_timeout_add(100, update_game_two_player, NULL);
+
+        // 設置玩家一的 Timer
+        two_player_timer_id = g_timeout_add(player1_move_interval, player1_move_cb, NULL);
+        player1_timer_active = TRUE;
+
+        // 設置玩家二的 Timer
+        two_player_timer2_id = g_timeout_add(player2_move_interval, player2_move_cb, NULL);
+        player2_timer_active = TRUE;
+
         gtk_widget_queue_draw(canvas_two);
         return G_SOURCE_REMOVE;
     }
