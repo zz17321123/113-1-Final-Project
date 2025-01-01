@@ -112,7 +112,7 @@
       <AdditionalOptions>/IC:/gtk/bin/../include/gtk-4.0 /IC:/gtk/bin/../include/pango-1.0 /IC:/gtk/bin/../include/fribidi /IC:/gtk/bin/../include/harfbuzz /IC:/gtk/bin/../include/gdk-pixbuf-2.0 /IC:/gtk/bin/../include/cairo /IC:/gtk/bin/../include/freetype2 /IC:/gtk/bin/../include/libpng16 /IC:/gtk/bin/../include/pixman-1 /IC:/gtk/bin/../include/graphene-1.0 /IC:/gtk/bin/../lib/graphene-1.0/include /IC:/gtk/bin/../include /IC:/gtk/bin/../include/glib-2.0 /IC:/gtk/bin/../lib/glib-2.0/include %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalOptions>/libpath:C:/gtk/bin/../lib gtk-4.lib pangocairo-1.0.lib pangowin32-1.0.lib pango-1.0.lib harfbuzz.lib gdk_pixbuf-2.0.lib cairo-gobject.lib cairo.lib graphene-1.0.lib gio-2.0.lib gstreamer-1.0.lib gobject-2.0.lib glib-2.0.lib intl.lib %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>D:\gstreamer\1.0\msvc_x86_64\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>

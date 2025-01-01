@@ -8,6 +8,7 @@
 #include <gst/gst.h>
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <windows.h>
 
 //========================[ 常數 ]========================
 // 定義遊戲格子的寬度與高度
@@ -2328,27 +2329,26 @@ static void activate(GtkApplication* app, gpointer user_data)
 }
 
 //==============================================================
-// [ 主函式 main ]
+// [ 程式入口點 WinMain ]
 //==============================================================
-int main(int argc, char** argv)
-{
-    setlocale(LC_ALL, "");             // 設置本地化
-    srand((unsigned int)time(NULL));   // 初始化隨機數生成器
+// 程式的入口點，負責初始化和運行GTK應用程序
+int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    setlocale(LC_ALL, ""); // 設置本地化環境
+    srand((unsigned int)time(NULL)); // 初始化隨機數生成器
 
     // 初始化GStreamer
-    gst_init(&argc, &argv);
+    gst_init(NULL, NULL);
 
     // 創建GtkApplication
-    GtkApplication* app = gtk_application_new("com.example.snakegame", G_APPLICATION_FLAGS_NONE);
+    GtkApplication* app = gtk_application_new(
+        "com.example.snakegame",
+        G_APPLICATION_FLAGS_NONE);
 
-    // 連接activate信號
+    // 連接activate信號到activate函式
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
 
-    // 運行應用程式（取代 WinMain 的做法）
-    int status = g_application_run(G_APPLICATION(app), argc, argv);
-
-    // 釋放資源
-    g_object_unref(app);
-
+    // 運行應用程序
+    int status = g_application_run(G_APPLICATION(app), 0, NULL);
+    g_object_unref(app); // 釋放應用程序對象
     return status;
 }
