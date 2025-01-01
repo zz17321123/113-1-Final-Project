@@ -491,6 +491,7 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
         g_list_free(snake_two);
         snake_two = NULL;
     }
+    // *** 雙人模式 ***
 
     // 清理障礙物
     if (obstacles) {
@@ -1260,11 +1261,33 @@ static void show_game_over_screen_two_player(void)
     double player1_survival = player1_alive ? difftime(time(NULL), player1_start_time) : difftime(player1_end_time, player1_start_time);
     double player2_survival = player2_alive ? difftime(time(NULL), player2_start_time) : difftime(player2_end_time, player2_start_time);
 
+    // 確定勝者
+    const char* winner_text = "";
+    if (score_single > score_two) {
+        winner_text = "玩家一獲勝！";
+    }
+    else if (score_single < score_two) {
+        winner_text = "玩家二獲勝！";
+    }
+    else {
+        // 分數相同，依存活時間判斷
+        if (player1_survival > player2_survival) {
+            winner_text = "玩家一獲勝！";
+        }
+        else if (player1_survival < player2_survival) {
+            winner_text = "玩家二獲勝！";
+        }
+        else {
+            winner_text = "平手！";
+        }
+    }
+
     // 標籤
     char buf[256];
-    snprintf(buf, sizeof(buf), "遊戲結束!\n最終分數:\n玩家一: %d\n玩家二: %d\n\n生存時間:\n玩家一: %.0f 秒\n玩家二: %.0f 秒",
+    snprintf(buf, sizeof(buf), "遊戲結束!\n最終分數:\n玩家一: %d\n玩家二: %d\n\n生存時間:\n玩家一: %.0f 秒\n玩家二: %.0f 秒\n\n%s",
         score_single, score_two,
-        player1_survival, player2_survival);
+        player1_survival, player2_survival,
+        winner_text);
     GtkWidget* label = gtk_label_new(buf);
     gtk_box_append(GTK_BOX(game_over_vbox), label);
 
