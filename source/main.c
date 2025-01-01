@@ -72,6 +72,12 @@ static guint player1_move_interval = INITIAL_MOVE_INTERVAL; // 玩家一的移�
 static guint player2_move_interval = INITIAL_MOVE_INTERVAL; // 玩家二的移動間隔（毫秒）
 static gboolean player1_timer_active = FALSE;
 static gboolean player2_timer_active = FALSE;
+
+// 新增雙人模式的玩家狀態與生存時間
+static gboolean player1_alive = TRUE;
+static gboolean player2_alive = TRUE;
+static time_t player1_start_time, player2_start_time;
+static time_t player1_end_time, player2_end_time;
 // *** 雙人模式 ***
 
 static GList* obstacles = NULL;               // 障礙物節點
@@ -188,24 +194,28 @@ static void draw_two_player_mode(cairo_t* cr, int width, int height, double cell
     draw_obstacles(cr, cell_size);
 
     // 玩家一 蛇 (綠色)
-    GdkRGBA body_green = { 0.0, 1.0, 0.0, 1.0 };
-    GdkRGBA shadow_green = { 0.0, 0.4, 0.0, 1.0 };
-    for (GList* iter = snake_single; iter; iter = iter->next) {
-        Point* seg = (Point*)iter->data;
-        if (seg) {
-            draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
-                cell_size, body_green, shadow_green);
+    if (player1_alive) {
+        GdkRGBA body_green = { 0.0, 1.0, 0.0, 1.0 };
+        GdkRGBA shadow_green = { 0.0, 0.4, 0.0, 1.0 };
+        for (GList* iter = snake_single; iter; iter = iter->next) {
+            Point* seg = (Point*)iter->data;
+            if (seg) {
+                draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
+                    cell_size, body_green, shadow_green);
+            }
         }
     }
 
     // 玩家二 蛇 (橘色)
-    GdkRGBA body_orange = { 1.0, 0.5, 0.0, 1.0 };
-    GdkRGBA shadow_orange = { 0.6, 0.3, 0.0, 1.0 };
-    for (GList* iter = snake_two; iter; iter = iter->next) {
-        Point* seg = (Point*)iter->data;
-        if (seg) {
-            draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
-                cell_size, body_orange, shadow_orange);
+    if (player2_alive) {
+        GdkRGBA body_orange = { 1.0, 0.5, 0.0, 1.0 };
+        GdkRGBA shadow_orange = { 0.6, 0.3, 0.0, 1.0 };
+        for (GList* iter = snake_two; iter; iter = iter->next) {
+            Point* seg = (Point*)iter->data;
+            if (seg) {
+                draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
+                    cell_size, body_orange, shadow_orange);
+            }
         }
     }
 
@@ -481,7 +491,6 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
         g_list_free(snake_two);
         snake_two = NULL;
     }
-    // *** 雙人模式 ***
 
     // 清理障礙物
     if (obstacles) {
@@ -508,6 +517,15 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
     player2_move_interval = INITIAL_MOVE_INTERVAL; // *** 雙人模式 ***
     player1_timer_active = FALSE; // *** 雙人模式 ***
     player2_timer_active = FALSE; // *** 雙人模式 ***
+
+    // 重置雙人模式的玩家狀態與生存時間
+    player1_alive = TRUE;
+    player2_alive = TRUE;
+    player1_start_time = 0;
+    player2_start_time = 0;
+    player1_end_time = 0;
+    player2_end_time = 0;
+    // *** 雙人模式 ***
 
     // 移除定時器
     if (single_timer_id) {
@@ -630,6 +648,15 @@ static void init_two_player_game(void)
     player2_move_interval = INITIAL_MOVE_INTERVAL;
     player1_timer_active = FALSE;
     player2_timer_active = FALSE;
+
+    // 重置雙人模式的玩家狀態與生存時間
+    player1_alive = TRUE;
+    player2_alive = TRUE;
+    player1_start_time = time(NULL);
+    player2_start_time = time(NULL);
+    player1_end_time = 0;
+    player2_end_time = 0;
+    // *** 雙人模式 ***
 
     // 生成食物和障礙物
     generate_food_single();
@@ -964,7 +991,7 @@ static gboolean update_game_single(gpointer data)
 // 玩家一移動回調函式
 static gboolean player1_move_cb(gpointer data)
 {
-    if (current_mode != MODE_TWO_PLAYER || game_over)
+    if (current_mode != MODE_TWO_PLAYER || game_over || !player1_alive)
         return G_SOURCE_REMOVE;
 
     // 更新方向
@@ -989,10 +1016,25 @@ static gboolean player1_move_cb(gpointer data)
 
     // 碰撞
     if (check_collision_two_player(&nh1, NULL)) {
-        game_over = TRUE;
+        player1_alive = FALSE;
+        player1_end_time = time(NULL);
+        // 移除玩家一的 Timer
+        if (two_player_timer_id) {
+            g_source_remove(two_player_timer_id);
+            two_player_timer_id = 0;
+        }
+
+        // 檢查是否所有玩家都已死亡
+        if (!player2_alive) {
+            game_over = TRUE;
+            gtk_widget_queue_draw(canvas_two);
+            show_game_over_screen_two_player();
+            return G_SOURCE_REMOVE;
+        }
+
+        // 繪製更新
         gtk_widget_queue_draw(canvas_two);
-        show_game_over_screen_two_player();
-        return G_SOURCE_REMOVE;
+        return G_SOURCE_CONTINUE;
     }
 
     // 添加新頭 玩家一
@@ -1034,7 +1076,7 @@ static gboolean player1_move_cb(gpointer data)
 // 玩家二移動回調函式
 static gboolean player2_move_cb(gpointer data)
 {
-    if (current_mode != MODE_TWO_PLAYER || game_over)
+    if (current_mode != MODE_TWO_PLAYER || game_over || !player2_alive)
         return G_SOURCE_REMOVE;
 
     // 更新方向
@@ -1059,10 +1101,25 @@ static gboolean player2_move_cb(gpointer data)
 
     // 碰撞
     if (check_collision_two_player(NULL, &nh2)) {
-        game_over = TRUE;
+        player2_alive = FALSE;
+        player2_end_time = time(NULL);
+        // 移除玩家二的 Timer
+        if (two_player_timer2_id) {
+            g_source_remove(two_player_timer2_id);
+            two_player_timer2_id = 0;
+        }
+
+        // 檢查是否所有玩家都已死亡
+        if (!player1_alive) {
+            game_over = TRUE;
+            gtk_widget_queue_draw(canvas_two);
+            show_game_over_screen_two_player();
+            return G_SOURCE_REMOVE;
+        }
+
+        // 繪製更新
         gtk_widget_queue_draw(canvas_two);
-        show_game_over_screen_two_player();
-        return G_SOURCE_REMOVE;
+        return G_SOURCE_CONTINUE;
     }
 
     // 添加新頭 玩家二
@@ -1199,9 +1256,15 @@ static void show_game_over_screen_two_player(void)
     gtk_widget_set_halign(game_over_vbox, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(game_over_vbox, GTK_ALIGN_CENTER);
 
+    // 計算生存時間
+    double player1_survival = player1_alive ? difftime(time(NULL), player1_start_time) : difftime(player1_end_time, player1_start_time);
+    double player2_survival = player2_alive ? difftime(time(NULL), player2_start_time) : difftime(player2_end_time, player2_start_time);
+
     // 標籤
-    char buf[128];
-    snprintf(buf, sizeof(buf), "遊戲結束!\n最終分數:\n玩家一: %d\n玩家二: %d", score_single, score_two);
+    char buf[256];
+    snprintf(buf, sizeof(buf), "遊戲結束!\n最終分數:\n玩家一: %d\n玩家二: %d\n\n生存時間:\n玩家一: %.0f 秒\n玩家二: %.0f 秒",
+        score_single, score_two,
+        player1_survival, player2_survival);
     GtkWidget* label = gtk_label_new(buf);
     gtk_box_append(GTK_BOX(game_over_vbox), label);
 
