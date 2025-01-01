@@ -409,6 +409,22 @@ static void generate_food_single(void)
                 }
             }
         }
+
+        // 檢查是否與禁止區域重疊（4x4區域）
+        if (valid) {
+            Point* initial_snake = (Point*)snake_single->data;
+            if (initial_snake) {
+                int forbidden_x_min = initial_snake->x - 2;
+                int forbidden_x_max = initial_snake->x + 1;
+                int forbidden_y_min = initial_snake->y - 2;
+                int forbidden_y_max = initial_snake->y + 1;
+
+                if (food_single.x >= forbidden_x_min && food_single.x <= forbidden_x_max &&
+                    food_single.y >= forbidden_y_min && food_single.y <= forbidden_y_max) {
+                    valid = FALSE;
+                }
+            }
+        }
     }
 }
 
@@ -454,6 +470,25 @@ static void generate_obstacles_single(void)
                         existing_obs->y + existing_obs->height <= obs->y)) {
                         valid = FALSE;
                         break;
+                    }
+                }
+            }
+
+            // 檢查是否與禁止生成區域重疊（4x4區域）
+            if (valid) {
+                Point* initial_snake = (Point*)snake_single->data;
+                if (initial_snake) {
+                    int forbidden_x_min = initial_snake->x - 2;
+                    int forbidden_x_max = initial_snake->x + 1;
+                    int forbidden_y_min = initial_snake->y - 2;
+                    int forbidden_y_max = initial_snake->y + 1;
+
+                    // 檢查障礙物是否與禁止區域重疊
+                    if (!(obs->x + obs->width - 1 < forbidden_x_min ||
+                        obs->x > forbidden_x_max ||
+                        obs->y + obs->height - 1 < forbidden_y_min ||
+                        obs->y > forbidden_y_max)) {
+                        valid = FALSE;
                     }
                 }
             }
