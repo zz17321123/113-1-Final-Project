@@ -15,6 +15,8 @@
 #define INITIAL_MOVE_INTERVAL 100   // 初始移動間隔（毫秒）
 #define MOVE_INTERVAL_INCREMENT 50  // 每次吃食物後移動間隔增加量（毫秒）
 #define MAX_MOVE_INTERVAL 1000      // 最大移動間隔，防止速度過慢
+#define FLASH_INTERVAL 200           // 閃爍間隔（毫秒）
+#define FLASH_COUNT 6                // 閃爍次數
 
 //========================[ 遊戲模式 ]========================
 typedef enum {
@@ -78,6 +80,17 @@ static gboolean player1_alive = TRUE;
 static gboolean player2_alive = TRUE;
 static time_t player1_start_time, player2_start_time;
 static time_t player1_end_time, player2_end_time;
+
+// 新增雙人模式的閃爍狀態
+static gboolean player1_flashing = FALSE;
+static gboolean player1_visible = TRUE;
+static int player1_flash_count = 0;
+static guint player1_flash_timer_id = 0;
+
+static gboolean player2_flashing = FALSE;
+static gboolean player2_visible = TRUE;
+static int player2_flash_count = 0;
+static guint player2_flash_timer_id = 0;
 // *** 雙人模式 ***
 
 static GList* obstacles = NULL;               // 障礙物節點
@@ -107,6 +120,9 @@ static gboolean check_collision_single(Point* head);
 static gboolean check_collision_two_player(Point* head1, Point* head2); // *** 雙人模式 ***
 static void show_game_over_screen_single(void);
 static void show_game_over_screen_two_player(void); // *** 雙人模式 ***
+
+static gboolean player1_flash_cb(gpointer data); // *** 雙人模式 ***
+static gboolean player2_flash_cb(gpointer data); // *** 雙人模式 ***
 
 static void draw_game(GtkDrawingArea* area, cairo_t* cr, int width, int height, gpointer user_data);
 static void draw_single_mode(cairo_t* cr, int width, int height, double cell_size);
@@ -194,27 +210,37 @@ static void draw_two_player_mode(cairo_t* cr, int width, int height, double cell
     draw_obstacles(cr, cell_size);
 
     // 玩家一 蛇 (綠色)
-    if (player1_alive) {
-        GdkRGBA body_green = { 0.0, 1.0, 0.0, 1.0 };
-        GdkRGBA shadow_green = { 0.0, 0.4, 0.0, 1.0 };
-        for (GList* iter = snake_single; iter; iter = iter->next) {
-            Point* seg = (Point*)iter->data;
-            if (seg) {
-                draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
-                    cell_size, body_green, shadow_green);
+    if (player1_alive || player1_flashing) {
+        if (player1_flashing && !player1_visible) {
+            // 不繪製，實現閃爍效果
+        }
+        else {
+            GdkRGBA body_green = { 0.0, 1.0, 0.0, 1.0 };
+            GdkRGBA shadow_green = { 0.0, 0.4, 0.0, 1.0 };
+            for (GList* iter = snake_single; iter; iter = iter->next) {
+                Point* seg = (Point*)iter->data;
+                if (seg) {
+                    draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
+                        cell_size, body_green, shadow_green);
+                }
             }
         }
     }
 
     // 玩家二 蛇 (橘色)
-    if (player2_alive) {
-        GdkRGBA body_orange = { 1.0, 0.5, 0.0, 1.0 };
-        GdkRGBA shadow_orange = { 0.6, 0.3, 0.0, 1.0 };
-        for (GList* iter = snake_two; iter; iter = iter->next) {
-            Point* seg = (Point*)iter->data;
-            if (seg) {
-                draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
-                    cell_size, body_orange, shadow_orange);
+    if (player2_alive || player2_flashing) {
+        if (player2_flashing && !player2_visible) {
+            // 不繪製，實現閃爍效果
+        }
+        else {
+            GdkRGBA body_orange = { 1.0, 0.5, 0.0, 1.0 };
+            GdkRGBA shadow_orange = { 0.6, 0.3, 0.0, 1.0 };
+            for (GList* iter = snake_two; iter; iter = iter->next) {
+                Point* seg = (Point*)iter->data;
+                if (seg) {
+                    draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
+                        cell_size, body_orange, shadow_orange);
+                }
             }
         }
     }
@@ -309,6 +335,84 @@ static void draw_obstacles(cairo_t* cr, double cell_size)
         }
     }
 }
+
+// *** 雙人模式 ***
+// 閃爍回調函式 玩家一
+static gboolean player1_flash_cb(gpointer data)
+{
+    if (!player1_flashing)
+        return G_SOURCE_REMOVE;
+
+    player1_visible = !player1_visible;
+    player1_flash_count++;
+
+    if (player1_flash_count >= FLASH_COUNT) { // 完成閃爍次數
+        player1_flashing = FALSE;
+        player1_alive = FALSE;
+        player1_end_time = time(NULL);
+
+        // 移除閃爍定時器
+        if (player1_flash_timer_id) {
+            g_source_remove(player1_flash_timer_id);
+            player1_flash_timer_id = 0;
+        }
+
+        // 檢查是否所有玩家都已死亡
+        if (!player2_alive && !player2_flashing) {
+            game_over = TRUE;
+            gtk_widget_queue_draw(canvas_two);
+            show_game_over_screen_two_player();
+            return G_SOURCE_REMOVE;
+        }
+
+        // 繪製更新
+        gtk_widget_queue_draw(canvas_two);
+        return G_SOURCE_REMOVE;
+    }
+
+    // 繪製更新
+    gtk_widget_queue_draw(canvas_two);
+    return G_SOURCE_CONTINUE;
+}
+
+// 閃爍回調函式 玩家二
+static gboolean player2_flash_cb(gpointer data)
+{
+    if (!player2_flashing)
+        return G_SOURCE_REMOVE;
+
+    player2_visible = !player2_visible;
+    player2_flash_count++;
+
+    if (player2_flash_count >= FLASH_COUNT) { // 完成閃爍次數
+        player2_flashing = FALSE;
+        player2_alive = FALSE;
+        player2_end_time = time(NULL);
+
+        // 移除閃爍定時器
+        if (player2_flash_timer_id) {
+            g_source_remove(player2_flash_timer_id);
+            player2_flash_timer_id = 0;
+        }
+
+        // 檢查是否所有玩家都已死亡
+        if (!player1_alive && !player1_flashing) {
+            game_over = TRUE;
+            gtk_widget_queue_draw(canvas_two);
+            show_game_over_screen_two_player();
+            return G_SOURCE_REMOVE;
+        }
+
+        // 繪製更新
+        gtk_widget_queue_draw(canvas_two);
+        return G_SOURCE_REMOVE;
+    }
+
+    // 繪製更新
+    gtk_widget_queue_draw(canvas_two);
+    return G_SOURCE_CONTINUE;
+}
+// *** 雙人模式 ***
 
 // 鍵盤事件處理
 static gboolean on_key_press(GtkEventControllerKey* controller,
@@ -491,7 +595,6 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
         g_list_free(snake_two);
         snake_two = NULL;
     }
-    // *** 雙人模式 ***
 
     // 清理障礙物
     if (obstacles) {
@@ -522,11 +625,26 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
     // 重置雙人模式的玩家狀態與生存時間
     player1_alive = TRUE;
     player2_alive = TRUE;
+    player1_flashing = FALSE;
+    player2_flashing = FALSE;
+    player1_visible = TRUE;
+    player2_visible = TRUE;
+    player1_flash_count = 0;
+    player2_flash_count = 0;
     player1_start_time = 0;
     player2_start_time = 0;
     player1_end_time = 0;
     player2_end_time = 0;
-    // *** 雙人模式 ***
+
+    // 移除閃爍定時器
+    if (player1_flash_timer_id) {
+        g_source_remove(player1_flash_timer_id);
+        player1_flash_timer_id = 0;
+    }
+    if (player2_flash_timer_id) {
+        g_source_remove(player2_flash_timer_id);
+        player2_flash_timer_id = 0;
+    }
 
     // 移除定時器
     if (single_timer_id) {
@@ -653,17 +771,23 @@ static void init_two_player_game(void)
     // 重置雙人模式的玩家狀態與生存時間
     player1_alive = TRUE;
     player2_alive = TRUE;
+    player1_flashing = FALSE;
+    player2_flashing = FALSE;
+    player1_visible = TRUE;
+    player2_visible = TRUE;
+    player1_flash_count = 0;
+    player2_flash_count = 0;
     player1_start_time = time(NULL);
     player2_start_time = time(NULL);
     player1_end_time = 0;
     player2_end_time = 0;
-    // *** 雙人模式 ***
 
     // 生成食物和障礙物
     generate_food_single();
     generate_obstacles();
 }
 // *** 雙人模式 ***
+
 
 // 生成食物
 static void generate_food_single(void)
@@ -824,7 +948,8 @@ static void generate_obstacles(void)
         }
         obstacles = g_list_append(obstacles, obs);
     }
-}
+} // **已添加的閉合括號**
+
 
 // 碰撞檢查 (單人模式)
 static gboolean check_collision_single(Point* head)
@@ -932,6 +1057,7 @@ static gboolean check_collision_two_player(Point* head1, Point* head2)
 }
 // *** 雙人模式 ***
 
+
 // 更新遊戲狀態 (單人)
 static gboolean update_game_single(gpointer data)
 {
@@ -992,7 +1118,7 @@ static gboolean update_game_single(gpointer data)
 // 玩家一移動回調函式
 static gboolean player1_move_cb(gpointer data)
 {
-    if (current_mode != MODE_TWO_PLAYER || game_over || !player1_alive)
+    if (current_mode != MODE_TWO_PLAYER || game_over || !player1_alive || player1_flashing)
         return G_SOURCE_REMOVE;
 
     // 更新方向
@@ -1017,21 +1143,18 @@ static gboolean player1_move_cb(gpointer data)
 
     // 碰撞
     if (check_collision_two_player(&nh1, NULL)) {
-        player1_alive = FALSE;
-        player1_end_time = time(NULL);
+        player1_flashing = TRUE;
+        player1_visible = TRUE;
+        player1_flash_count = 0;
+
         // 移除玩家一的 Timer
         if (two_player_timer_id) {
             g_source_remove(two_player_timer_id);
             two_player_timer_id = 0;
         }
 
-        // 檢查是否所有玩家都已死亡
-        if (!player2_alive) {
-            game_over = TRUE;
-            gtk_widget_queue_draw(canvas_two);
-            show_game_over_screen_two_player();
-            return G_SOURCE_REMOVE;
-        }
+        // 啟動閃爍定時器
+        player1_flash_timer_id = g_timeout_add(FLASH_INTERVAL, player1_flash_cb, NULL);
 
         // 繪製更新
         gtk_widget_queue_draw(canvas_two);
@@ -1077,7 +1200,7 @@ static gboolean player1_move_cb(gpointer data)
 // 玩家二移動回調函式
 static gboolean player2_move_cb(gpointer data)
 {
-    if (current_mode != MODE_TWO_PLAYER || game_over || !player2_alive)
+    if (current_mode != MODE_TWO_PLAYER || game_over || !player2_alive || player2_flashing)
         return G_SOURCE_REMOVE;
 
     // 更新方向
@@ -1102,21 +1225,18 @@ static gboolean player2_move_cb(gpointer data)
 
     // 碰撞
     if (check_collision_two_player(NULL, &nh2)) {
-        player2_alive = FALSE;
-        player2_end_time = time(NULL);
+        player2_flashing = TRUE;
+        player2_visible = TRUE;
+        player2_flash_count = 0;
+
         // 移除玩家二的 Timer
         if (two_player_timer2_id) {
             g_source_remove(two_player_timer2_id);
             two_player_timer2_id = 0;
         }
 
-        // 檢查是否所有玩家都已死亡
-        if (!player1_alive) {
-            game_over = TRUE;
-            gtk_widget_queue_draw(canvas_two);
-            show_game_over_screen_two_player();
-            return G_SOURCE_REMOVE;
-        }
+        // 啟動閃爍定時器
+        player2_flash_timer_id = g_timeout_add(FLASH_INTERVAL, player2_flash_cb, NULL);
 
         // 繪製更新
         gtk_widget_queue_draw(canvas_two);
@@ -1159,6 +1279,7 @@ static gboolean player2_move_cb(gpointer data)
     return G_SOURCE_CONTINUE;
 }
 // *** 雙人模式 ***
+
 
 // 更新倒數計時 (單人)
 static gboolean update_countdown_single(gpointer data)
@@ -1211,6 +1332,7 @@ static gboolean update_countdown_two_player(gpointer data)
     }
 }
 // *** 雙人模式 ***
+
 
 // 顯示遊戲結束畫面 (單人)
 static void show_game_over_screen_single(void)
@@ -1301,6 +1423,7 @@ static void show_game_over_screen_two_player(void)
     gtk_stack_set_visible_child_name(stack_ptr, "game_over_two_player");
 }
 // *** 雙人模式 ***
+
 
 // 激活回調
 static void activate(GtkApplication* app, gpointer user_data)
