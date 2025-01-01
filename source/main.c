@@ -17,8 +17,10 @@
 typedef enum {
     MODE_NONE = 0,
     MODE_MENU,
-    MODE_COUNTDOWN,
+    MODE_COUNTDOWN_SINGLE,
     MODE_SINGLE,
+    MODE_COUNTDOWN_TWO_PLAYER,   // *** 雙人模式 ***
+    MODE_TWO_PLAYER,             // *** 雙人模式 ***
     MODE_INTRO
 } GameMode;
 
@@ -41,21 +43,34 @@ static GameMode current_mode = MODE_MENU;    // 當前模式
 static gboolean game_over = FALSE;           // 遊戲結束標誌
 
 // 單人模式相關
-static GList* snake_single = NULL;            // 蛇的節點
+static GList* snake_single = NULL;            // 單人蛇的節點
+static Point   food_single;                   // 單人食物位置
+static int     direction_single = GDK_KEY_Right;       // 單人當前方向
+static int     next_direction_single = GDK_KEY_Right;  // 單人下一方向
+static int     score_single = 0;              // 單人分數
+static GtkWidget* canvas_single = NULL;       // 單人繪圖區
+static guint  single_timer_id = 0;            // 單人遊戲定時器ID
+static guint  countdown_timer_id = 0;         // 單人倒數定時器ID
+static int    current_countdown = 3;          // 單人當前倒數數字
+
+// *** 雙人模式 ***
+static GList* snake_two = NULL;               // 雙人蛇的節點
+static int     direction_two = GDK_KEY_Left;       // 雙人當前方向
+static int     next_direction_two = GDK_KEY_Left;  // 雙人下一方向
+static int     score_two = 0;                  // 雙人分數
+static GtkWidget* canvas_two = NULL;           // 雙人繪圖區
+static guint  two_player_timer_id = 0;         // 雙人遊戲定時器ID
+static guint  countdown_two_player_timer_id = 0; // 雙人倒數定時器ID
+static int    current_countdown_two = 3;        // 雙人當前倒數數字
+// *** 雙人模式 ***
+
 static GList* obstacles = NULL;               // 障礙物節點
-static Point   food_single;                   // 食物位置
-static int     direction_single = GDK_KEY_Right;       // 當前方向
-static int     next_direction_single = GDK_KEY_Right;  // 下一方向
-static int     score_single = 0;              // 分數
-static GtkWidget* canvas_single = NULL;       // 繪圖區
-static guint  single_timer_id = 0;            // 遊戲定時器ID
-static guint  countdown_timer_id = 0;         // 倒數定時器ID
-static int    current_countdown = 3;          // 當前倒數數字
 
 static double CELL_SIZE = 45.0;                // 單位格子大小（像素）
 
 //========================[ 函式宣告 ]========================
 static void on_single_mode_clicked(GtkButton* button, gpointer user_data);
+static void on_two_player_mode_clicked(GtkButton* button, gpointer user_data); // *** 雙人模式 ***
 static void on_intro_mode_clicked(GtkButton* button, gpointer user_data);
 static void on_quit_clicked(GtkButton* button, gpointer user_data);
 static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data);
@@ -64,15 +79,21 @@ static gboolean on_key_press(GtkEventControllerKey* controller,
     GdkModifierType state, gpointer user_data);
 
 static void init_single_game(void);
+static void init_two_player_game(void); // *** 雙人模式 ***
 static gboolean update_game_single(gpointer data);
-static gboolean update_countdown(gpointer data);
+static gboolean update_game_two_player(gpointer data); // *** 雙人模式 ***
+static gboolean update_countdown_single(gpointer data);
+static gboolean update_countdown_two_player(gpointer data); // *** 雙人模式 ***
 static void generate_food_single(void);
-static void generate_obstacles_single(void);
+static void generate_obstacles(void);
 static gboolean check_collision_single(Point* head);
+static gboolean check_collision_two_player(Point* head1, Point* head2); // *** 雙人模式 ***
 static void show_game_over_screen_single(void);
+static void show_game_over_screen_two_player(void); // *** 雙人模式 ***
 
 static void draw_game(GtkDrawingArea* area, cairo_t* cr, int width, int height, gpointer user_data);
 static void draw_single_mode(cairo_t* cr, int width, int height, double cell_size);
+static void draw_two_player_mode(cairo_t* cr, int width, int height, double cell_size); // *** 雙人模式 ***
 static void draw_countdown(cairo_t* cr, int width, int height, int countdown);
 static void draw_snake_segment(cairo_t* cr, double x, double y, double size,
     GdkRGBA body, GdkRGBA shadow);
@@ -89,11 +110,20 @@ static void draw_game(GtkDrawingArea* area, cairo_t* cr, int width, int height, 
         return;
     }
 
-    if (current_mode == MODE_SINGLE) {
+    // *** 修正條件順序，先處理倒數模式 ***
+    if (current_mode == MODE_COUNTDOWN_SINGLE || current_mode == MODE_COUNTDOWN_TWO_PLAYER) {
+        if (current_mode == MODE_COUNTDOWN_SINGLE) {
+            draw_countdown(cr, width, height, current_countdown);
+        }
+        else { // MODE_COUNTDOWN_TWO_PLAYER
+            draw_countdown(cr, width, height, current_countdown_two);
+        }
+    }
+    else if (current_mode == MODE_SINGLE) {
         draw_single_mode(cr, width, height, CELL_SIZE);
     }
-    else if (current_mode == MODE_COUNTDOWN) {
-        draw_countdown(cr, width, height, current_countdown);
+    else if (current_mode == MODE_TWO_PLAYER) {
+        draw_two_player_mode(cr, width, height, CELL_SIZE);
     }
 }
 
@@ -127,10 +157,63 @@ static void draw_single_mode(cairo_t* cr, int width, int height, double cell_siz
         CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_font_size(cr, 16);
     char buf[64];
-    snprintf(buf, sizeof(buf), "Score: %d", score_single);
+    snprintf(buf, sizeof(buf), "分數: %d", score_single);
     cairo_move_to(cr, 10, 25);
     cairo_show_text(cr, buf);
 }
+
+// *** 雙人模式 ***
+// 繪製雙人模式
+static void draw_two_player_mode(cairo_t* cr, int width, int height, double cell_size)
+{
+    // 背景
+    cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+    cairo_paint(cr);
+
+    // 食物
+    draw_food(cr, food_single.x * cell_size, food_single.y * cell_size, cell_size);
+
+    // 障礙物
+    draw_obstacles(cr, cell_size);
+
+    // 玩家一 蛇 (綠色)
+    GdkRGBA body_green = { 0.0, 1.0, 0.0, 1.0 };
+    GdkRGBA shadow_green = { 0.0, 0.4, 0.0, 1.0 };
+    for (GList* iter = snake_single; iter; iter = iter->next) {
+        Point* seg = (Point*)iter->data;
+        if (seg) {
+            draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
+                cell_size, body_green, shadow_green);
+        }
+    }
+
+    // 玩家二 蛇 (橘色)
+    GdkRGBA body_orange = { 1.0, 0.5, 0.0, 1.0 };
+    GdkRGBA shadow_orange = { 0.6, 0.3, 0.0, 1.0 };
+    for (GList* iter = snake_two; iter; iter = iter->next) {
+        Point* seg = (Point*)iter->data;
+        if (seg) {
+            draw_snake_segment(cr, seg->x * cell_size, seg->y * cell_size,
+                cell_size, body_orange, shadow_orange);
+        }
+    }
+
+    // 分數
+    cairo_set_source_rgb(cr, 1, 1, 1);
+    cairo_select_font_face(cr, "Microsoft JhengHei",
+        CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, 16);
+    char buf1[64];
+    snprintf(buf1, sizeof(buf1), "玩家一分數: %d", score_single);
+    cairo_move_to(cr, 10, 25);
+    cairo_show_text(cr, buf1);
+
+    char buf2[64];
+    snprintf(buf2, sizeof(buf2), "玩家二分數: %d", score_two);
+    cairo_move_to(cr, 10, 50);
+    cairo_show_text(cr, buf2);
+}
+// *** 雙人模式 ***
 
 // 繪製倒數計時
 static void draw_countdown(cairo_t* cr, int width, int height, int countdown)
@@ -211,24 +294,53 @@ static gboolean on_key_press(GtkEventControllerKey* controller,
     guint keyval, guint keycode,
     GdkModifierType state, gpointer user_data)
 {
-    if (current_mode == MODE_SINGLE && !game_over) {
-        switch (keyval) {
-        case GDK_KEY_Up:
-            if (next_direction_single != GDK_KEY_Down)
-                next_direction_single = GDK_KEY_Up;
-            break;
-        case GDK_KEY_Down:
-            if (next_direction_single != GDK_KEY_Up)
-                next_direction_single = GDK_KEY_Down;
-            break;
-        case GDK_KEY_Left:
-            if (next_direction_single != GDK_KEY_Right)
-                next_direction_single = GDK_KEY_Left;
-            break;
-        case GDK_KEY_Right:
-            if (next_direction_single != GDK_KEY_Left)
-                next_direction_single = GDK_KEY_Right;
-            break;
+    if ((current_mode == MODE_SINGLE || current_mode == MODE_TWO_PLAYER) && !game_over) {
+        // 控制玩家一 (單人或雙人模式)
+        if (current_mode == MODE_SINGLE || current_mode == MODE_TWO_PLAYER) {
+            switch (keyval) {
+            case GDK_KEY_w:
+            case GDK_KEY_W:
+                if (next_direction_single != GDK_KEY_Down)
+                    next_direction_single = GDK_KEY_Up;
+                break;
+            case GDK_KEY_s:
+            case GDK_KEY_S:
+                if (next_direction_single != GDK_KEY_Up)
+                    next_direction_single = GDK_KEY_Down;
+                break;
+            case GDK_KEY_a:
+            case GDK_KEY_A:
+                if (next_direction_single != GDK_KEY_Right)
+                    next_direction_single = GDK_KEY_Left;
+                break;
+            case GDK_KEY_d:
+            case GDK_KEY_D:
+                if (next_direction_single != GDK_KEY_Left)
+                    next_direction_single = GDK_KEY_Right;
+                break;
+            }
+        }
+
+        // 控制玩家二 (僅雙人模式)
+        if (current_mode == MODE_TWO_PLAYER) {
+            switch (keyval) {
+            case GDK_KEY_Up:
+                if (next_direction_two != GDK_KEY_Down)
+                    next_direction_two = GDK_KEY_Up;
+                break;
+            case GDK_KEY_Down:
+                if (next_direction_two != GDK_KEY_Up)
+                    next_direction_two = GDK_KEY_Down;
+                break;
+            case GDK_KEY_Left:
+                if (next_direction_two != GDK_KEY_Right)
+                    next_direction_two = GDK_KEY_Left;
+                break;
+            case GDK_KEY_Right:
+                if (next_direction_two != GDK_KEY_Left)
+                    next_direction_two = GDK_KEY_Right;
+                break;
+            }
         }
     }
 
@@ -239,7 +351,7 @@ static gboolean on_key_press(GtkEventControllerKey* controller,
 static void on_single_mode_clicked(GtkButton* button, gpointer user_data)
 {
     GtkStack* stack_ptr = GTK_STACK(user_data);
-    current_mode = MODE_COUNTDOWN;
+    current_mode = MODE_COUNTDOWN_SINGLE;
     current_countdown = 3;
 
     // 初始化遊戲（蛇、食物、障礙物）
@@ -271,8 +383,49 @@ static void on_single_mode_clicked(GtkButton* button, gpointer user_data)
     gtk_stack_set_visible_child_name(stack_ptr, "game_single");
 
     // 啟動倒數計時器
-    countdown_timer_id = g_timeout_add_seconds(1, update_countdown, NULL);
+    countdown_timer_id = g_timeout_add_seconds(1, update_countdown_single, NULL);
 }
+
+// *** 雙人模式 ***
+// 兩人模式按鈕回調
+static void on_two_player_mode_clicked(GtkButton* button, gpointer user_data)
+{
+    GtkStack* stack_ptr = GTK_STACK(user_data);
+    current_mode = MODE_COUNTDOWN_TWO_PLAYER;
+    current_countdown_two = 3;
+
+    // 初始化遊戲（兩條蛇、食物、障礙物）
+    init_two_player_game();
+
+    // 移除舊視圖
+    GtkWidget* existing_game_two = gtk_stack_get_child_by_name(stack_ptr, "game_two_player");
+    if (existing_game_two) {
+        gtk_stack_remove(stack_ptr, existing_game_two);
+    }
+
+    // 創建繪圖區
+    GtkWidget* new_canvas = gtk_drawing_area_new();
+    gtk_widget_set_size_request(new_canvas, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE);
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(new_canvas),
+        draw_game, NULL, NULL);
+
+    // 創建容器
+    GtkWidget* container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_hexpand(container, TRUE);
+    gtk_widget_set_vexpand(container, TRUE);
+    gtk_widget_set_halign(container, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(container, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(container), new_canvas);
+
+    // 加入GtkStack
+    gtk_stack_add_named(stack_ptr, container, "game_two_player");
+    canvas_two = new_canvas;
+    gtk_stack_set_visible_child_name(stack_ptr, "game_two_player");
+
+    // 啟動倒數計時器
+    countdown_two_player_timer_id = g_timeout_add_seconds(1, update_countdown_two_player, NULL);
+}
+// *** 雙人模式 ***
 
 // 遊戲介紹按鈕回調
 static void on_intro_mode_clicked(GtkButton* button, gpointer user_data)
@@ -294,7 +447,7 @@ static void on_quit_clicked(GtkButton* button, gpointer user_data)
 // 返回主選單按鈕回調
 static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
 {
-    // 清理蛇
+    // 清理單人蛇
     if (snake_single) {
         for (GList* iter = snake_single; iter; iter = iter->next) {
             free(iter->data);
@@ -302,6 +455,16 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
         g_list_free(snake_single);
         snake_single = NULL;
     }
+
+    // *** 雙人模式 ***
+    if (snake_two) {
+        for (GList* iter = snake_two; iter; iter = iter->next) {
+            free(iter->data);
+        }
+        g_list_free(snake_two);
+        snake_two = NULL;
+    }
+    // *** 雙人模式 ***
 
     // 清理障礙物
     if (obstacles) {
@@ -316,8 +479,12 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
     score_single = 0;
     direction_single = GDK_KEY_Right;
     next_direction_single = GDK_KEY_Right;
+    score_two = 0; // *** 雙人模式 ***
+    direction_two = GDK_KEY_Left; // *** 雙人模式 ***
+    next_direction_two = GDK_KEY_Left; // *** 雙人模式 ***
     game_over = FALSE;
     current_countdown = 3;
+    current_countdown_two = 3; // *** 雙人模式 ***
 
     // 移除定時器
     if (single_timer_id) {
@@ -325,9 +492,19 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
         single_timer_id = 0;
     }
 
+    if (two_player_timer_id) { // *** 雙人模式 ***
+        g_source_remove(two_player_timer_id);
+        two_player_timer_id = 0;
+    }
+
     if (countdown_timer_id) {
         g_source_remove(countdown_timer_id);
         countdown_timer_id = 0;
+    }
+
+    if (countdown_two_player_timer_id) { // *** 雙人模式 ***
+        g_source_remove(countdown_two_player_timer_id);
+        countdown_two_player_timer_id = 0;
     }
 
     // 移除視圖
@@ -335,8 +512,16 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
     GtkWidget* game_single = gtk_stack_get_child_by_name(stack_ptr, "game_single");
     if (game_single) gtk_stack_remove(stack_ptr, game_single);
 
+    GtkWidget* game_two_player = gtk_stack_get_child_by_name(stack_ptr, "game_two_player"); // *** 雙人模式 ***
+    if (game_two_player) gtk_stack_remove(stack_ptr, game_two_player);
+    // *** 雙人模式 ***
+
     GtkWidget* game_over_single = gtk_stack_get_child_by_name(stack_ptr, "game_over_single");
     if (game_over_single) gtk_stack_remove(stack_ptr, game_over_single);
+
+    GtkWidget* game_over_two_player = gtk_stack_get_child_by_name(stack_ptr, "game_over_two_player"); // *** 雙人模式 ***
+    if (game_over_two_player) gtk_stack_remove(stack_ptr, game_over_two_player);
+    // *** 雙人模式 ***
 
     // 顯示主選單
     gtk_stack_set_visible_child_name(stack_ptr, "main_menu");
@@ -345,22 +530,13 @@ static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data)
 // 初始化單人遊戲
 static void init_single_game(void)
 {
-    // 清理蛇
+    // 清理單人蛇
     if (snake_single) {
         for (GList* iter = snake_single; iter; iter = iter->next) {
             free(iter->data);
         }
         g_list_free(snake_single);
         snake_single = NULL;
-    }
-
-    // 清理障礙物
-    if (obstacles) {
-        for (GList* iter = obstacles; iter; iter = iter->next) {
-            free(iter->data);
-        }
-        g_list_free(obstacles);
-        obstacles = NULL;
     }
 
     // 初始蛇
@@ -377,8 +553,55 @@ static void init_single_game(void)
 
     // 生成食物和障礙物
     generate_food_single();
-    generate_obstacles_single();
+    generate_obstacles();
 }
+
+// 初始化雙人遊戲 *** 雙人模式 ***
+static void init_two_player_game(void)
+{
+    // 清理兩條蛇
+    if (snake_single) {
+        for (GList* iter = snake_single; iter; iter = iter->next) {
+            free(iter->data);
+        }
+        g_list_free(snake_single);
+        snake_single = NULL;
+    }
+
+    if (snake_two) {
+        for (GList* iter = snake_two; iter; iter = iter->next) {
+            free(iter->data);
+        }
+        g_list_free(snake_two);
+        snake_two = NULL;
+    }
+
+    // 初始玩家一蛇
+    Point* h1 = (Point*)malloc(sizeof(Point));
+    h1->x = GRID_WIDTH / 4;
+    h1->y = GRID_HEIGHT / 2;
+    snake_single = g_list_append(snake_single, h1);
+
+    // 初始玩家二蛇
+    Point* h2 = (Point*)malloc(sizeof(Point));
+    h2->x = (3 * GRID_WIDTH) / 4;
+    h2->y = GRID_HEIGHT / 2;
+    snake_two = g_list_append(snake_two, h2);
+
+    // 重置方向和分數
+    direction_single = GDK_KEY_Right;
+    next_direction_single = GDK_KEY_Right;
+    direction_two = GDK_KEY_Left; // 使兩條蛇初始方向相對
+    next_direction_two = GDK_KEY_Left;
+    score_single = 0;
+    score_two = 0;
+    game_over = FALSE;
+
+    // 生成食物和障礙物
+    generate_food_single();
+    generate_obstacles();
+}
+// *** 雙人模式 ***
 
 // 生成食物
 static void generate_food_single(void)
@@ -398,6 +621,16 @@ static void generate_food_single(void)
             }
         }
 
+        // *** 雙人模式 ***
+        for (GList* iter = snake_two; iter; iter = iter->next) {
+            Point* seg = (Point*)iter->data;
+            if (seg->x == food_single.x && seg->y == food_single.y) {
+                valid = FALSE;
+                break;
+            }
+        }
+        // *** 雙人模式 ***
+
         // 檢查是否與障礙物重疊
         if (valid) {
             for (GList* iter = obstacles; iter; iter = iter->next) {
@@ -412,16 +645,22 @@ static void generate_food_single(void)
 
         // 檢查是否與禁止區域重疊（4x4區域）
         if (valid) {
-            Point* initial_snake = (Point*)snake_single->data;
-            if (initial_snake) {
-                int forbidden_x_min = initial_snake->x - 2;
-                int forbidden_x_max = initial_snake->x + 1;
-                int forbidden_y_min = initial_snake->y - 2;
-                int forbidden_y_max = initial_snake->y + 1;
+            // 對所有蛇的頭部進行檢查
+            GList* snakes[] = { snake_single, snake_two };
+            for (int i = 0; i < 2; i++) { // 處理單人或雙人模式
+                if (snakes[i]) {
+                    Point* initial_snake = (Point*)snakes[i]->data;
+                    if (initial_snake) {
+                        int forbidden_x_min = initial_snake->x - 2;
+                        int forbidden_x_max = initial_snake->x + 1;
+                        int forbidden_y_min = initial_snake->y - 2;
+                        int forbidden_y_max = initial_snake->y + 1;
 
-                if (food_single.x >= forbidden_x_min && food_single.x <= forbidden_x_max &&
-                    food_single.y >= forbidden_y_min && food_single.y <= forbidden_y_max) {
-                    valid = FALSE;
+                        if (food_single.x >= forbidden_x_min && food_single.x <= forbidden_x_max &&
+                            food_single.y >= forbidden_y_min && food_single.y <= forbidden_y_max) {
+                            valid = FALSE;
+                        }
+                    }
                 }
             }
         }
@@ -429,8 +668,17 @@ static void generate_food_single(void)
 }
 
 // 生成障礙物
-static void generate_obstacles_single(void)
+static void generate_obstacles(void)
 {
+    // 清除現有障礙物
+    if (obstacles) {
+        for (GList* iter = obstacles; iter; iter = iter->next) {
+            free(iter->data);
+        }
+        g_list_free(obstacles);
+        obstacles = NULL;
+    }
+
     for (int i = 0; i < NUM_OBSTACLES; i++) {
         Obstacle* obs = (Obstacle*)malloc(sizeof(Obstacle));
         gboolean valid = FALSE;
@@ -450,6 +698,19 @@ static void generate_obstacles_single(void)
                     break;
                 }
             }
+
+            // *** 雙人模式 ***
+            if (valid) {
+                for (GList* iter = snake_two; iter; iter = iter->next) {
+                    Point* seg = (Point*)iter->data;
+                    if (seg->x >= obs->x && seg->x < (obs->x + obs->width) &&
+                        seg->y >= obs->y && seg->y < (obs->y + obs->height)) {
+                        valid = FALSE;
+                        break;
+                    }
+                }
+            }
+            // *** 雙人模式 ***
 
             // 檢查是否與食物重疊
             if (valid) {
@@ -476,19 +737,25 @@ static void generate_obstacles_single(void)
 
             // 檢查是否與禁止生成區域重疊（4x4區域）
             if (valid) {
-                Point* initial_snake = (Point*)snake_single->data;
-                if (initial_snake) {
-                    int forbidden_x_min = initial_snake->x - 2;
-                    int forbidden_x_max = initial_snake->x + 1;
-                    int forbidden_y_min = initial_snake->y - 2;
-                    int forbidden_y_max = initial_snake->y + 1;
+                // 對所有蛇的頭部進行檢查
+                GList* snakes[] = { snake_single, snake_two };
+                for (int i = 0; i < 2; i++) {
+                    if (snakes[i]) {
+                        Point* initial_snake = (Point*)snakes[i]->data;
+                        if (initial_snake) {
+                            int forbidden_x_min = initial_snake->x - 2;
+                            int forbidden_x_max = initial_snake->x + 1;
+                            int forbidden_y_min = initial_snake->y - 2;
+                            int forbidden_y_max = initial_snake->y + 1;
 
-                    // 檢查障礙物是否與禁止區域重疊
-                    if (!(obs->x + obs->width - 1 < forbidden_x_min ||
-                        obs->x > forbidden_x_max ||
-                        obs->y + obs->height - 1 < forbidden_y_min ||
-                        obs->y > forbidden_y_max)) {
-                        valid = FALSE;
+                            // 檢查障礙物是否與禁止區域重疊
+                            if (!(obs->x + obs->width - 1 < forbidden_x_min ||
+                                obs->x > forbidden_x_max ||
+                                obs->y + obs->height - 1 < forbidden_y_min ||
+                                obs->y > forbidden_y_max)) {
+                                valid = FALSE;
+                            }
+                        }
                     }
                 }
             }
@@ -497,7 +764,7 @@ static void generate_obstacles_single(void)
     }
 }
 
-// 碰撞檢查
+// 碰撞檢查 (單人模式)
 static gboolean check_collision_single(Point* head)
 {
     // 自撞
@@ -516,7 +783,54 @@ static gboolean check_collision_single(Point* head)
     return FALSE;
 }
 
-// 更新遊戲狀態
+// *** 雙人模式 ***
+// 碰撞檢查 (雙人模式)
+static gboolean check_collision_two_player(Point* head1, Point* head2)
+{
+    // 玩家一 自撞
+    for (GList* iter = snake_single->next; iter; iter = iter->next) {
+        Point* seg = (Point*)iter->data;
+        if (seg->x == head1->x && seg->y == head1->y) return TRUE;
+    }
+
+    // 玩家二 自撞
+    for (GList* iter = snake_two->next; iter; iter = iter->next) {
+        Point* seg = (Point*)iter->data;
+        if (seg->x == head2->x && seg->y == head2->y) return TRUE;
+    }
+
+    // 障礙物撞擊 玩家一
+    for (GList* iter = obstacles; iter; iter = iter->next) {
+        Obstacle* obs = (Obstacle*)iter->data;
+        if (head1->x >= obs->x && head1->x < (obs->x + obs->width) &&
+            head1->y >= obs->y && head1->y < (obs->y + obs->height)) return TRUE;
+    }
+
+    // 障礙物撞擊 玩家二
+    for (GList* iter = obstacles; iter; iter = iter->next) {
+        Obstacle* obs = (Obstacle*)iter->data;
+        if (head2->x >= obs->x && head2->x < (obs->x + obs->width) &&
+            head2->y >= obs->y && head2->y < (obs->y + obs->height)) return TRUE;
+    }
+
+    // 兩條蛇相撞
+    // 玩家一 撞到 玩家二 蛇身
+    for (GList* iter = snake_two; iter; iter = iter->next) {
+        Point* seg = (Point*)iter->data;
+        if (seg->x == head1->x && seg->y == head1->y) return TRUE;
+    }
+
+    // 玩家二 撞到 玩家一 蛇身
+    for (GList* iter = snake_single; iter; iter = iter->next) {
+        Point* seg = (Point*)iter->data;
+        if (seg->x == head2->x && seg->y == head2->y) return TRUE;
+    }
+
+    return FALSE;
+}
+// *** 雙人模式 ***
+
+// 更新遊戲狀態 (單人)
 static gboolean update_game_single(gpointer data)
 {
     if (current_mode != MODE_SINGLE || game_over)
@@ -572,10 +886,103 @@ static gboolean update_game_single(gpointer data)
     return G_SOURCE_CONTINUE;
 }
 
-// 更新倒數計時
-static gboolean update_countdown(gpointer data)
+// *** 雙人模式 ***
+// 更新遊戲狀態 (雙人模式)
+static gboolean update_game_two_player(gpointer data)
 {
-    if (current_mode != MODE_COUNTDOWN)
+    if (current_mode != MODE_TWO_PLAYER || game_over)
+        return G_SOURCE_REMOVE;
+
+    // 更新方向
+    direction_single = next_direction_single;
+    direction_two = next_direction_two;
+
+    // 新頭位置 玩家一
+    Point* head1 = (Point*)snake_single->data;
+    if (!head1) return G_SOURCE_REMOVE;
+    Point nh1 = { head1->x, head1->y };
+    switch (direction_single) {
+    case GDK_KEY_Up:    nh1.y--; break;
+    case GDK_KEY_Down:  nh1.y++; break;
+    case GDK_KEY_Left:  nh1.x--; break;
+    case GDK_KEY_Right: nh1.x++; break;
+    }
+
+    // 新頭位置 玩家二
+    Point* head2 = (Point*)snake_two->data;
+    if (!head2) return G_SOURCE_REMOVE;
+    Point nh2 = { head2->x, head2->y };
+    switch (direction_two) {
+    case GDK_KEY_Up:    nh2.y--; break;
+    case GDK_KEY_Down:  nh2.y++; break;
+    case GDK_KEY_Left:  nh2.x--; break;
+    case GDK_KEY_Right: nh2.x++; break;
+    }
+
+    // 邊界循環 玩家一
+    if (nh1.x < 0) nh1.x = GRID_WIDTH - 1;
+    else if (nh1.x >= GRID_WIDTH) nh1.x = 0;
+    if (nh1.y < 0) nh1.y = GRID_HEIGHT - 1;
+    else if (nh1.y >= GRID_HEIGHT) nh1.y = 0;
+
+    // 邊界循環 玩家二
+    if (nh2.x < 0) nh2.x = GRID_WIDTH - 1;
+    else if (nh2.x >= GRID_WIDTH) nh2.x = 0;
+    if (nh2.y < 0) nh2.y = GRID_HEIGHT - 1;
+    else if (nh2.y >= GRID_HEIGHT) nh2.y = 0;
+
+    // 碰撞
+    if (check_collision_two_player(&nh1, &nh2)) {
+        game_over = TRUE;
+        gtk_widget_queue_draw(canvas_two);
+        show_game_over_screen_two_player();
+        return G_SOURCE_REMOVE;
+    }
+
+    // 添加新頭 玩家一
+    Point* new_seg1 = (Point*)malloc(sizeof(Point));
+    *new_seg1 = nh1;
+    snake_single = g_list_prepend(snake_single, new_seg1);
+
+    // 添加新頭 玩家二
+    Point* new_seg2 = (Point*)malloc(sizeof(Point));
+    *new_seg2 = nh2;
+    snake_two = g_list_prepend(snake_two, new_seg2);
+
+    // 玩家一 吃食物
+    if (nh1.x == food_single.x && nh1.y == food_single.y) {
+        score_single++;
+        generate_food_single();
+    }
+    else {
+        // 移除尾巴 玩家一
+        Point* tail1 = (Point*)g_list_last(snake_single)->data;
+        snake_single = g_list_remove(snake_single, tail1);
+        free(tail1);
+    }
+
+    // 玩家二 吃食物
+    if (nh2.x == food_single.x && nh2.y == food_single.y) {
+        score_two++;
+        generate_food_single();
+    }
+    else {
+        // 移除尾巴 玩家二
+        Point* tail2 = (Point*)g_list_last(snake_two)->data;
+        snake_two = g_list_remove(snake_two, tail2);
+        free(tail2);
+    }
+
+    // 重繪
+    gtk_widget_queue_draw(canvas_two);
+    return G_SOURCE_CONTINUE;
+}
+// *** 雙人模式 ***
+
+// 更新倒數計時 (單人)
+static gboolean update_countdown_single(gpointer data)
+{
+    if (current_mode != MODE_COUNTDOWN_SINGLE)
         return G_SOURCE_REMOVE;
 
     if (current_countdown > 0) {
@@ -593,7 +1000,30 @@ static gboolean update_countdown(gpointer data)
     }
 }
 
-// 顯示遊戲結束畫面
+// *** 雙人模式 ***
+// 更新倒數計時 (雙人模式)
+static gboolean update_countdown_two_player(gpointer data)
+{
+    if (current_mode != MODE_COUNTDOWN_TWO_PLAYER)
+        return G_SOURCE_REMOVE;
+
+    if (current_countdown_two > 0) {
+        current_countdown_two--;
+        gtk_widget_queue_draw(canvas_two);
+        return G_SOURCE_CONTINUE;
+    }
+    else {
+        // 倒數結束，開始遊戲
+        current_mode = MODE_TWO_PLAYER;
+        countdown_two_player_timer_id = 0;
+        two_player_timer_id = g_timeout_add(100, update_game_two_player, NULL);
+        gtk_widget_queue_draw(canvas_two);
+        return G_SOURCE_REMOVE;
+    }
+}
+// *** 雙人模式 ***
+
+// 顯示遊戲結束畫面 (單人)
 static void show_game_over_screen_single(void)
 {
     GtkStack* stack_ptr = GTK_STACK(stack);
@@ -609,12 +1039,12 @@ static void show_game_over_screen_single(void)
 
     // 標籤
     char buf[128];
-    snprintf(buf, sizeof(buf), "Game Over!\nFinal Score: %d", score_single);
+    snprintf(buf, sizeof(buf), "遊戲結束!\n最終分數: %d", score_single);
     GtkWidget* label = gtk_label_new(buf);
     gtk_box_append(GTK_BOX(game_over_vbox), label);
 
     // 返回按鈕
-    GtkWidget* back_btn = gtk_button_new_with_label("Back to Menu");
+    GtkWidget* back_btn = gtk_button_new_with_label("返回選單");
     gtk_box_append(GTK_BOX(game_over_vbox), back_btn);
     g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_to_menu_clicked), stack_ptr);
 
@@ -622,6 +1052,38 @@ static void show_game_over_screen_single(void)
     gtk_stack_add_named(stack_ptr, game_over_vbox, "game_over_single");
     gtk_stack_set_visible_child_name(stack_ptr, "game_over_single");
 }
+
+// *** 雙人模式 ***
+// 顯示遊戲結束畫面 (雙人模式)
+static void show_game_over_screen_two_player(void)
+{
+    GtkStack* stack_ptr = GTK_STACK(stack);
+    GtkWidget* existing_game_over_two_player = gtk_stack_get_child_by_name(stack_ptr, "game_over_two_player");
+    if (existing_game_over_two_player) {
+        gtk_stack_remove(stack_ptr, existing_game_over_two_player);
+    }
+
+    // 創建容器
+    GtkWidget* game_over_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 20);
+    gtk_widget_set_halign(game_over_vbox, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(game_over_vbox, GTK_ALIGN_CENTER);
+
+    // 標籤
+    char buf[128];
+    snprintf(buf, sizeof(buf), "遊戲結束!\n最終分數:\n玩家一: %d\n玩家二: %d", score_single, score_two);
+    GtkWidget* label = gtk_label_new(buf);
+    gtk_box_append(GTK_BOX(game_over_vbox), label);
+
+    // 返回按鈕
+    GtkWidget* back_btn = gtk_button_new_with_label("返回選單");
+    gtk_box_append(GTK_BOX(game_over_vbox), back_btn);
+    g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_to_menu_clicked), stack_ptr);
+
+    // 加入GtkStack
+    gtk_stack_add_named(stack_ptr, game_over_vbox, "game_over_two_player");
+    gtk_stack_set_visible_child_name(stack_ptr, "game_over_two_player");
+}
+// *** 雙人模式 ***
 
 // 激活回調
 static void activate(GtkApplication* app, gpointer user_data)
@@ -665,21 +1127,28 @@ static void activate(GtkApplication* app, gpointer user_data)
     gtk_widget_set_margin_end(main_menu, 20);
 
     // 標籤
-    GtkWidget* label = gtk_label_new("Select Game Mode");
+    GtkWidget* label = gtk_label_new("選擇遊戲模式");
     gtk_box_append(GTK_BOX(main_menu), label);
 
     // 單人模式
-    GtkWidget* single_btn = gtk_button_new_with_label("Single Player");
+    GtkWidget* single_btn = gtk_button_new_with_label("單人模式");
     gtk_box_append(GTK_BOX(main_menu), single_btn);
     g_signal_connect(single_btn, "clicked", G_CALLBACK(on_single_mode_clicked), stack);
 
+    // *** 雙人模式 ***
+    // 兩人模式
+    GtkWidget* two_player_btn = gtk_button_new_with_label("雙人模式");
+    gtk_box_append(GTK_BOX(main_menu), two_player_btn);
+    g_signal_connect(two_player_btn, "clicked", G_CALLBACK(on_two_player_mode_clicked), stack);
+    // *** 雙人模式 ***
+
     // 遊戲介紹
-    GtkWidget* intro_btn = gtk_button_new_with_label("Game Introduction");
+    GtkWidget* intro_btn = gtk_button_new_with_label("遊戲介紹");
     gtk_box_append(GTK_BOX(main_menu), intro_btn);
     g_signal_connect(intro_btn, "clicked", G_CALLBACK(on_intro_mode_clicked), stack);
 
     // 退出
-    GtkWidget* quit_btn = gtk_button_new_with_label("Quit Game");
+    GtkWidget* quit_btn = gtk_button_new_with_label("退出遊戲");
     gtk_box_append(GTK_BOX(main_menu), quit_btn);
     g_signal_connect(quit_btn, "clicked", G_CALLBACK(on_quit_clicked), NULL);
 
@@ -697,14 +1166,16 @@ static void activate(GtkApplication* app, gpointer user_data)
 
     // 介紹文字
     GtkWidget* label_intro = gtk_label_new(
-        "Welcome to Snake Hero!\n\n"
-        "【Rules】\n"
-        "1. The snake moves automatically. Change direction to avoid its body.\n"
-        "2. Colliding with walls or itself ends the game.\n"
-        "3. Single Player mode aims to eat as much food as possible to increase your score.\n\n"
-        "【Controls】\n"
-        "Use the arrow keys to control the snake's direction.\n\n"
-        "Enjoy the game!"
+        "歡迎來到 Snake Hero!\n\n"
+        "【規則】\n"
+        "1. 蛇會自動移動。改變方向以避開自身。\n"
+        "2. 碰到牆壁或自身會結束遊戲。\n"
+        "3. 單人模式目標是盡可能多地吃食物以增加分數。\n"
+        "4. 雙人模式允許兩位玩家同時競爭。\n\n"
+        "【控制方式】\n"
+        "玩家一: 使用 W/A/S/D 鍵控制蛇的方向。\n"
+        "玩家二: 使用方向鍵控制蛇的方向。\n\n"
+        "享受遊戲吧!"
     );
     gtk_label_set_xalign(GTK_LABEL(label_intro), 0.0);
     gtk_label_set_wrap(GTK_LABEL(label_intro), TRUE);
@@ -712,7 +1183,7 @@ static void activate(GtkApplication* app, gpointer user_data)
     gtk_box_append(GTK_BOX(intro_vbox), label_intro);
 
     // 返回按鈕
-    GtkWidget* back_btn_intro = gtk_button_new_with_label("Back to Menu");
+    GtkWidget* back_btn_intro = gtk_button_new_with_label("返回選單");
     gtk_box_append(GTK_BOX(intro_vbox), back_btn_intro);
     g_signal_connect(back_btn_intro, "clicked", G_CALLBACK(on_back_to_menu_clicked), stack);
 
