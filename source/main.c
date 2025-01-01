@@ -93,8 +93,7 @@ static guint  player2_timer_id = 0;
 //=== 固定網格尺寸 ===
 static double CELL_SIZE = 45.0;
 
-//==============================================================
-// [蛇閃爍機制]
+//=== 蛇閃爍機制 ===
 typedef struct {
     GList** snake_ref;
     gboolean* snake_alive;
@@ -104,22 +103,22 @@ typedef struct {
     GtkWidget* draw_canvas;
 } FlickerData;
 
-/* ===== 函式宣告 ===== */
+//=== 函式宣告 ===
 
-/* 倒數相關 */
+// 倒數相關
 static void start_countdown(void);
 static gboolean countdown_tick(gpointer data);
 
-/* 清理和暫停對話框 */
+// 清理和暫停對話框
 static void clear_game_data(void);
 static void create_pause_dialog(void);
 static void on_resume_game(GtkButton* btn, gpointer user_data);
 
-/* 返回主選單、退出等 */
+// 返回主選單、退出等
 static void on_back_to_menu_clicked(GtkButton* button, gpointer user_data);
 static void on_quit_clicked(GtkButton* button, gpointer user_data);
 
-/* 單人遊戲 */
+// 單人遊戲
 static void init_single_game(void);
 static gboolean update_game_single(gpointer data);
 static void generate_food_single(void);
@@ -127,7 +126,7 @@ static gboolean check_collision_single(Point* head);
 static void kill_player_single(void);
 static void show_game_over_screen_single(void);
 
-/* 雙人遊戲 */
+// 雙人遊戲
 static void init_multi_game(void);
 static gboolean update_player1(gpointer data);
 static gboolean update_player2(gpointer data);
@@ -139,7 +138,7 @@ static void kill_player2(void);
 static void end_two_player_game(void);
 static void show_game_over_screen_multi(void);
 
-/* 繪圖 */
+// 繪圖
 static void draw_game(GtkDrawingArea* area, cairo_t* cr, int width, int height, gpointer user_data);
 static void draw_single_mode(cairo_t* cr, int width, int height, double cell_size);
 static void draw_multi_mode(cairo_t* cr, int width, int height, double cell_size);
@@ -147,29 +146,29 @@ static void draw_snake_segment(cairo_t* cr, double x, double y, double size, Gdk
 static void draw_food(cairo_t* cr, double x, double y, double size);
 static void draw_wall(cairo_t* cr, double x, double y, double w, double h);
 
-/* 鍵盤事件 */
+// 鍵盤事件
 static gboolean on_key_press(GtkEventControllerKey* controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data);
 
-/* 主選單、遊戲介紹 */
+// 主選單、遊戲介紹
 static void show_main_menu(void);
 static void on_single_mode_clicked(GtkButton* button, gpointer user_data);
 static void on_multi_mode_clicked(GtkButton* button, gpointer user_data);
 static void on_intro_mode_clicked(GtkButton* button, gpointer user_data);
 
-/* 障礙物相關 */
+// 障礙物相關
 static gboolean is_obstacle_valid(int x, int y, int w, int h, GList* excluded_positions);
 static void generate_obstacles(GList* initial_positions);
 
-/* 亂數方向 */
+// 亂數方向
 static int get_random_direction(void);
 
-/* 蛇閃爍 */
+// 蛇閃爍
 static gboolean do_flicker_snake(gpointer data);
 static void start_flicker_snake(GList** snake_ref, gboolean* snake_alive, GtkWidget* draw_canvas);
 
 
 /* -----------------------------
-   [蛇閃爍機制] - 實作
+   蛇閃爍機制
    ----------------------------- */
 static gboolean do_flicker_snake(gpointer data)
 {
@@ -232,7 +231,7 @@ static void start_flicker_snake(GList** snake_ref, gboolean* snake_alive, GtkWid
 
 
 /* -----------------------------
-   [倒數機制]
+   倒數機制
    ----------------------------- */
 static void start_countdown(void)
 {
@@ -278,8 +277,9 @@ static gboolean countdown_tick(gpointer data)
     return TRUE;
 }
 
+
 /* -----------------------------
-   [清理/返回主選單/暫停...]
+   清理 / 返回主選單 / 暫停
    ----------------------------- */
 static void clear_game_data(void)
 {
@@ -420,8 +420,9 @@ static void on_resume_game(GtkButton* btn, gpointer user_data)
     }
 }
 
+
 /* -----------------------------
-   [障礙物]
+   障礙物
    ----------------------------- */
 static gboolean is_obstacle_valid(int x, int y, int w, int h, GList* excluded_positions)
 {
@@ -501,8 +502,9 @@ static void generate_obstacles(GList* initial_positions)
     }
 }
 
+
 /* -----------------------------
-   [ 隨機方向 ]
+   隨機方向
    ----------------------------- */
 static int get_random_direction(void)
 {
@@ -512,7 +514,7 @@ static int get_random_direction(void)
 }
 
 /* -----------------------------
-   [ 單人模式 ]
+   單人模式
    ----------------------------- */
 static void init_single_game(void)
 {
@@ -668,8 +670,9 @@ static void show_game_over_screen_single(void)
     gtk_stack_set_visible_child_name(stack_ptr, "game_over_single");
 }
 
+
 /* -----------------------------
-   [ 雙人模式 ]
+   雙人模式
    ----------------------------- */
 static void init_multi_game(void)
 {
@@ -953,9 +956,9 @@ static gboolean update_player2(gpointer data)
         }
     }
 
-    Point* new_seg = (Point*)malloc(sizeof(Point));
-    *new_seg = nh;
-    snake2 = g_list_prepend(snake2, new_seg);
+    Point* new_seg2 = (Point*)malloc(sizeof(Point));
+    *new_seg2 = nh;
+    snake2 = g_list_prepend(snake2, new_seg2);
 
     if (nh.x == food_multi.x && nh.y == food_multi.y) {
         score2++;
@@ -1016,8 +1019,9 @@ static void show_game_over_screen_multi(void)
     gtk_stack_set_visible_child_name(stack_ptr, "game_over_multi");
 }
 
+
 /* -----------------------------
-   [ 繪圖：蛇/牆/果實 ]
+   繪圖：蛇/牆/果實
    ----------------------------- */
 static void draw_snake_segment(cairo_t* cr, double x, double y, double size, GdkRGBA body, GdkRGBA shadow)
 {
@@ -1053,8 +1057,9 @@ static void draw_wall(cairo_t* cr, double x, double y, double w, double h)
     cairo_fill(cr);
 }
 
+
 /* -----------------------------
-   [ 繪製各模式 ]
+   繪製各模式
    ----------------------------- */
 static void draw_single_mode(cairo_t* cr, int width, int height, double cell_size)
 {
@@ -1079,10 +1084,12 @@ static void draw_single_mode(cairo_t* cr, int width, int height, double cell_siz
         }
     }
 
+    // 改用 "Cubic 11"
     cairo_set_source_rgb(cr, 1, 1, 1);
-    cairo_select_font_face(cr, "Microsoft JhengHei",
+    cairo_select_font_face(cr, "Cubic 11",
         CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_font_size(cr, 16);
+
     {
         char buf[64];
         snprintf(buf, sizeof(buf), "分數: %d", score_single);
@@ -1139,10 +1146,12 @@ static void draw_multi_mode(cairo_t* cr, int width, int height, double cell_size
         }
     }
 
+    // 改用 "Cubic 11"
     cairo_set_source_rgb(cr, 1, 1, 1);
-    cairo_select_font_face(cr, "Microsoft JhengHei",
+    cairo_select_font_face(cr, "Cubic 11",
         CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_font_size(cr, 16);
+
     {
         char buf[64];
         snprintf(buf, sizeof(buf), "玩家1:%d   玩家2:%d", score1, score2);
@@ -1166,8 +1175,9 @@ static void draw_multi_mode(cairo_t* cr, int width, int height, double cell_size
     }
 }
 
+
 /* -----------------------------
-   [繪圖主函式]
+   繪圖主函式
    ----------------------------- */
 static void draw_game(GtkDrawingArea* area, cairo_t* cr, int width, int height, gpointer user_data)
 {
@@ -1187,8 +1197,9 @@ static void draw_game(GtkDrawingArea* area, cairo_t* cr, int width, int height, 
     }
 }
 
+
 /* -----------------------------
-   [鍵盤事件]
+   鍵盤事件
    ----------------------------- */
 static gboolean on_key_press(GtkEventControllerKey* controller,
     guint keyval, guint keycode,
@@ -1278,8 +1289,9 @@ static gboolean on_key_press(GtkEventControllerKey* controller,
     return FALSE;
 }
 
+
 /* -----------------------------
-   [主選單與介紹模式]
+   主選單與介紹模式
    ----------------------------- */
 static void show_main_menu(void)
 {
@@ -1351,8 +1363,9 @@ static void on_intro_mode_clicked(GtkButton* button, gpointer user_data)
     gtk_stack_set_visible_child_name(stack_ptr, "game_intro");
 }
 
+
 /* -----------------------------
-   [主函式 main]
+   GtkApplication 啟動
    ----------------------------- */
 static void app_activate(GtkApplication* app, gpointer user_data)
 {
@@ -1361,7 +1374,7 @@ static void app_activate(GtkApplication* app, gpointer user_data)
     gtk_window_set_title(GTK_WINDOW(window), "Snake Hero 蛇之英雄");
     gtk_window_set_default_size(GTK_WINDOW(window), 1920, 1080);
 
-    // CSS: 設置字體為微軟正黑體
+    // CSS - 字體改為 "Cubic 11"
     GtkCssProvider* provider = gtk_css_provider_new();
     gtk_css_provider_load_from_string(provider,
         "button {\n"
@@ -1369,7 +1382,7 @@ static void app_activate(GtkApplication* app, gpointer user_data)
         "  min-height: 50px;\n"
         "}\n"
         "label {\n"
-        "  font-family: \"Microsoft JhengHei\";\n"
+        "  font-family: \"Cubic 11\";\n"  // 這裡改為 Cubic 11
         "  font-size: 23px;\n"
         "}\n"
     );
@@ -1398,67 +1411,79 @@ static void app_activate(GtkApplication* app, gpointer user_data)
     GtkWidget* label = gtk_label_new("選擇遊戲模式");
     gtk_box_append(GTK_BOX(main_menu), label);
 
-    // 單人模式按鈕
-    GtkWidget* single_btn = gtk_button_new_with_label("單人模式");
-    gtk_box_append(GTK_BOX(main_menu), single_btn);
-    g_signal_connect(single_btn, "clicked", G_CALLBACK(on_single_mode_clicked), stack);
+    // 單人模式
+    {
+        GtkWidget* single_btn = gtk_button_new_with_label("單人模式");
+        gtk_box_append(GTK_BOX(main_menu), single_btn);
+        g_signal_connect(single_btn, "clicked", G_CALLBACK(on_single_mode_clicked), stack);
+    }
 
-    // 雙人模式按鈕
-    GtkWidget* multi_btn = gtk_button_new_with_label("雙人模式 (玩家1 vs 玩家2)");
-    gtk_box_append(GTK_BOX(main_menu), multi_btn);
-    g_signal_connect(multi_btn, "clicked", G_CALLBACK(on_multi_mode_clicked), stack);
+    // 雙人模式
+    {
+        GtkWidget* multi_btn = gtk_button_new_with_label("雙人模式 (玩家1 vs 玩家2)");
+        gtk_box_append(GTK_BOX(main_menu), multi_btn);
+        g_signal_connect(multi_btn, "clicked", G_CALLBACK(on_multi_mode_clicked), stack);
+    }
 
-    // 遊戲介紹按鈕
-    GtkWidget* intro_btn = gtk_button_new_with_label("遊戲介紹");
-    gtk_box_append(GTK_BOX(main_menu), intro_btn);
-    g_signal_connect(intro_btn, "clicked", G_CALLBACK(on_intro_mode_clicked), stack);
+    // 遊戲介紹
+    {
+        GtkWidget* intro_btn = gtk_button_new_with_label("遊戲介紹");
+        gtk_box_append(GTK_BOX(main_menu), intro_btn);
+        g_signal_connect(intro_btn, "clicked", G_CALLBACK(on_intro_mode_clicked), stack);
+    }
 
-    // 退出遊戲按鈕
-    GtkWidget* quit_btn = gtk_button_new_with_label("退出遊戲");
-    gtk_box_append(GTK_BOX(main_menu), quit_btn);
-    g_signal_connect(quit_btn, "clicked", G_CALLBACK(on_quit_clicked), NULL);
+    // 退出遊戲
+    {
+        GtkWidget* quit_btn = gtk_button_new_with_label("退出遊戲");
+        gtk_box_append(GTK_BOX(main_menu), quit_btn);
+        g_signal_connect(quit_btn, "clicked", G_CALLBACK(on_quit_clicked), NULL);
+    }
 
-    // 加入stack
     gtk_stack_add_named(GTK_STACK(stack), main_menu, "main_menu");
 
     // 遊戲介紹視圖
-    GtkWidget* intro_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 20);
-    gtk_widget_set_halign(intro_vbox, GTK_ALIGN_CENTER);
-    gtk_widget_set_valign(intro_vbox, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_top(intro_vbox, 20);
-    gtk_widget_set_margin_bottom(intro_vbox, 20);
-    gtk_widget_set_margin_start(intro_vbox, 20);
-    gtk_widget_set_margin_end(intro_vbox, 20);
+    {
+        GtkWidget* intro_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 20);
+        gtk_widget_set_halign(intro_vbox, GTK_ALIGN_CENTER);
+        gtk_widget_set_valign(intro_vbox, GTK_ALIGN_CENTER);
+        gtk_widget_set_margin_top(intro_vbox, 20);
+        gtk_widget_set_margin_bottom(intro_vbox, 20);
+        gtk_widget_set_margin_start(intro_vbox, 20);
+        gtk_widget_set_margin_end(intro_vbox, 20);
 
-    GtkWidget* label_intro = gtk_label_new(
-        "歡迎來到 Snake Hero 蛇之英雄！\n\n"
-        "【遊戲規則】\n"
-        "1. 蛇會自動移動，玩家需要透過改變方向來避開障礙物和蛇身。\n"
-        "2. 撞到牆壁、障礙物或自身會導致蛇死亡。\n"
-        "3. 單人模式與一般貪食蛇相同，盡可能吃果實提高分數。\n"
-        "4. 雙人模式以分數高者勝，同分再比存活時間。\n\n"
-        "【操作說明】\n"
-        "單人：方向鍵\n"
-        "玩家1：WASD\n"
-        "玩家2：方向鍵\n\n"
-        "祝遊戲愉快！"
-    );
-    gtk_label_set_xalign(GTK_LABEL(label_intro), 0.0);
-    gtk_label_set_wrap(GTK_LABEL(label_intro), TRUE);
-    gtk_label_set_wrap_mode(GTK_LABEL(label_intro), PANGO_WRAP_WORD_CHAR);
-    gtk_box_append(GTK_BOX(intro_vbox), label_intro);
+        GtkWidget* label_intro = gtk_label_new(
+            "歡迎來到 Snake Hero 蛇之英雄！\n\n"
+            "【遊戲規則】\n"
+            "1. 蛇會自動移動，玩家需要透過改變方向來避開障礙物和蛇身。\n"
+            "2. 撞到牆壁、障礙物或自身會導致蛇死亡。\n"
+            "3. 單人模式與一般貪食蛇相同，盡可能吃果實提高分數。\n"
+            "4. 雙人模式以分數高者勝，同分再比存活時間。\n\n"
+            "【操作說明】\n"
+            "單人：方向鍵\n"
+            "玩家1：WASD\n"
+            "玩家2：方向鍵\n\n"
+            "祝遊戲愉快！"
+        );
+        gtk_label_set_xalign(GTK_LABEL(label_intro), 0.0);
+        gtk_label_set_wrap(GTK_LABEL(label_intro), TRUE);
+        gtk_label_set_wrap_mode(GTK_LABEL(label_intro), PANGO_WRAP_WORD_CHAR);
+        gtk_box_append(GTK_BOX(intro_vbox), label_intro);
 
-    GtkWidget* back_btn_intro = gtk_button_new_with_label("返回主選單");
-    gtk_box_append(GTK_BOX(intro_vbox), back_btn_intro);
-    g_signal_connect(back_btn_intro, "clicked", G_CALLBACK(on_back_to_menu_clicked), NULL);
+        GtkWidget* back_btn_intro = gtk_button_new_with_label("返回主選單");
+        gtk_box_append(GTK_BOX(intro_vbox), back_btn_intro);
+        g_signal_connect(back_btn_intro, "clicked", G_CALLBACK(on_back_to_menu_clicked), NULL);
 
-    gtk_stack_add_named(GTK_STACK(stack), intro_vbox, "game_intro");
+        gtk_stack_add_named(GTK_STACK(stack), intro_vbox, "game_intro");
+    }
+
     gtk_stack_set_visible_child_name(GTK_STACK(stack), "main_menu");
 
     // 監聽鍵盤事件
-    GtkEventController* controller = gtk_event_controller_key_new();
-    g_signal_connect(controller, "key-pressed", G_CALLBACK(on_key_press), NULL);
-    gtk_widget_add_controller(window, controller);
+    {
+        GtkEventController* controller = gtk_event_controller_key_new();
+        g_signal_connect(controller, "key-pressed", G_CALLBACK(on_key_press), NULL);
+        gtk_widget_add_controller(window, controller);
+    }
 
     gtk_window_present(GTK_WINDOW(window));
 }
@@ -1470,13 +1495,9 @@ int main(int argc, char** argv)
 
     gtk_init();  // 初始化 GTK
 
-    // 建立 GtkApplication
     GtkApplication* app = gtk_application_new("com.example.snakegame", G_APPLICATION_FLAGS_NONE);
-
-    // 綁定 "activate" 到自定的函式
     g_signal_connect(app, "activate", G_CALLBACK(app_activate), NULL);
 
-    // 執行應用程式
     int status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
 
